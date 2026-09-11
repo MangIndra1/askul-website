@@ -1,0 +1,12 @@
+export {}
+
+declare global {
+  interface DocumentPictureInPicture extends EventTarget {
+    requestWindow(options?: { width?: number; height?: number }): Promise<Window>
+    window: Window | null
+  }
+
+  interface Window {
+    documentPictureInPicture?: DocumentPictureInPicture
+  }
+}

@@ -1,26 +1,79 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Background hierarchy */
+  --dk-bg-0: #02020e;   /* Deep Black — paling gelap */
+  --dk-bg-1: #090e1f;   /* Midnight — background utama */
+
+  /* Surface hierarchy (card) */
+  --dk-surface-rgb: 15, 21, 40;      /* Dark Navy #0F1528 */
+  --dk-surface-2-rgb: 23, 28, 55;    /* Navy Surface #171C37 */
+  --dk-elevated-rgb: 35, 37, 73;     /* Elevated Surface #232549 */
+
+  /* Accent */
+  --purple-muted: #4b3a90;
+  --lav-600: #6b49d1;   /* Primary Purple — CTA/active state */
+  --lav-400: #8b4deb;   /* Bright Purple — highlight/glow */
+  --pink-400: #ec3c91;  /* Pink/Magenta — aksen kecil */
+
+  /* Status semantik (baru) */
+  --status-blue: #3172de;
+  --status-green: #59c878;
+  --status-orange: #e99b41;
+
+  /* Text */
+  --dk-text: #e5e6ed;
+  --dk-text-soft: #9599c2;   /* diturunkan sendiri, belum ada di data referensi — boleh di-tweak */
+  --dk-text-faint: #5f6284;
+
+  /* alias biar komponen lama yang masih pakai --ink / --ink-soft tetap jalan */
+  --ink: var(--dk-text);
+  --ink-soft: var(--dk-text-soft);
+
+  /* alias biar komponen lama yang masih pakai --peach tetap jalan (dipakai FocusStreakCard) */
+  --peach: var(--status-orange);
+  --peach-deep: #d9821f;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  font-family: var(--font-plus-jakarta), ui-sans-serif, system-ui, sans-serif;
+  color: var(--dk-text);
+  -webkit-font-smoothing: antialiased;
+  background: var(--dk-bg-0);
+}
+
+.glass {
+  background: rgba(var(--dk-surface-rgb), 0.55);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid rgba(139, 77, 235, 0.12);
+  box-shadow:
+    0 20px 40px -20px rgba(0, 0, 0, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.glass-soft {
+  background: rgba(var(--dk-surface-2-rgb), 0.5);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(139, 77, 235, 0.08);
+}
+
+.glass-elevated {
+  background: rgba(var(--dk-elevated-rgb), 0.65);
+}
+
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+::-webkit-scrollbar {
+  display: none;
 }
