@@ -2,13 +2,11 @@
 
 import { useState } from 'react'
 
-// Ganti/tambah playlist di sini kapan aja — ambil ID dari link
-// "Share > Copy link to playlist" Spotify (bagian setelah /playlist/).
+// Ganti/tambah playlist YouTube di sini kapan aja — ambil ID dari URL
+// (bagian setelah list=, sebelum tanda &).
 const PLAYLISTS = [
-  { id: '37i9dQZF1DWWQRwui0ExPn', name: 'Lofi Beats' },
-  { id: '0oPyDVNdgcPFAWmOYSK7O1', name: 'Deep Study' },
-  { id: '37i9dQZF1EQoowv2cDraCW', name: 'J-POP Mix' },
-  { id: '37i9dQZF1DZ06evO17ZOAt', name: '💙Hearts2Hearts🩵' },
+  { id: 'PLnuP9ZD9feDGtrZemSrtONYp4uj9hzRfd', name: 'Annyeong Yeorobun', count: 11 },
+  { id: 'PLnuP9ZD9feDFDafHTvn5lZAIMjW_gyV_P', name: "Well well well 90's", count: 21 },
 ]
 
 function IconChevronDown({ className }: { className?: string }) {
@@ -22,6 +20,14 @@ function IconCheck({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M20 6 9 17l-5-5" />
+    </svg>
+  )
+}
+function IconExternalLink({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <path d="M15 3h6v6M10 14 21 3" />
     </svg>
   )
 }
@@ -64,20 +70,33 @@ export function MusicCard() {
         </div>
       </div>
 
-        <div className="mt-4">
-            <iframe
-                key={selected.id}
-                src={`https://open.spotify.com/embed/playlist/${selected.id}?utm_source=generator&theme=0`}
-                width="100%"
-                height="352"
-                style={{
-                borderRadius: 16,
-                border: 'none',
-                }}
-                allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                loading="lazy"
-            />
+      <div className="relative mt-4 w-full overflow-hidden rounded-2xl" style={{ paddingBottom: '56.25%' }}>
+        <iframe
+          key={selected.id}
+          className="absolute inset-0 h-full w-full"
+          src={`https://www.youtube.com/embed/videoseries?list=${selected.id}`}
+          style={{ border: 'none' }}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+          loading="lazy"
+        />
+      </div>
+
+      <div className="mt-4 flex items-center justify-between rounded-2xl bg-white/[0.03] px-4 py-3">
+        <div>
+          <p className="text-sm font-semibold text-[var(--dk-text)]">{selected.name}</p>
+          <p className="text-xs text-[var(--dk-text-faint)]">{selected.count} video dalam playlist ini</p>
         </div>
+        <a
+          href={`https://youtube.com/playlist?list=${selected.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 rounded-full bg-white/[0.06] px-3.5 py-1.5 text-xs font-semibold text-[var(--dk-text-soft)] transition hover:bg-white/[0.1] hover:text-[var(--dk-text)]"
+        >
+          Buka di YouTube
+          <IconExternalLink className="h-3.5 w-3.5" />
+        </a>
+      </div>
     </div>
   )
 }

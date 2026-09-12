@@ -22,7 +22,10 @@ const HABIT_COLORS = [
 ]
 
 function toDateKey(d: Date) {
-  return d.toISOString().slice(0, 10)
+  const year = d.getFullYear()
+  const month = (d.getMonth() + 1).toString().padStart(2, '0')
+  const day = d.getDate().toString().padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function getWeekDates(offset: number) {
@@ -136,6 +139,38 @@ function IconTrash({ className }: { className?: string }) {
   )
 }
 
+// Path SVG buat bagian moon yang "menyala" — teknik standar render fase bulan:
+// setengah lingkaran (sisi kanan) digabung sama busur elips yang lebarnya
+// (rx) berubah sesuai k (0 = bulan baru/gelap total, 1 = purnama/terang total).
+function moonIlluminatedPath(cx: number, cy: number, r: number, k: number) {
+  const clamped = Math.max(0, Math.min(1, k))
+  const rx = r * Math.abs(1 - 2 * clamped)
+  const sweep = clamped < 0.5 ? 0 : 1
+  return `M ${cx} ${cy - r} A ${r} ${r} 0 0 1 ${cx} ${cy + r} A ${rx} ${r} 0 0 ${sweep} ${cx} ${cy - r} Z`
+}
+
+function MoonPhase({ fraction, size = 56 }: { fraction: number; size?: number }) {
+  const r = size / 2 - 3
+  const cx = size / 2
+  const cy = size / 2
+  const path = moonIlluminatedPath(cx, cy, r, fraction)
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <defs>
+        <linearGradient id="moonGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#FFFFFF" />
+          <stop offset="100%" stopColor="#FFE9A8" />
+        </linearGradient>
+      </defs>
+      <circle cx={cx} cy={cy} r={r} fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
+      {fraction > 0 && (
+        <path d={path} fill="url(#moonGlow)" style={{ filter: 'drop-shadow(0 0 2px rgba(255,251,235,0.5))' }} />
+      )}
+    </svg>
+  )
+}
+
 export function HabitTrackerCard({
   habits,
   logs,
@@ -155,6 +190,12 @@ export function HabitTrackerCard({
   const logSet = new Set(
     logs.map((l) => `${l.habit_id}_${l.log_date}`)
   )
+
+  // Selalu dihitung dari tanggal ASLI hari ini — nggak ikut berubah
+  // walau lagi lihat minggu lain lewat navigasi panah kiri/kanan.
+  const todayKey = toDateKey(new Date())
+  const completedToday = habits.filter((h) => logSet.has(`${h.id}_${todayKey}`)).length
+  const todayFraction = habits.length > 0 ? completedToday / habits.length : 0
 
   async function handleAddHabit() {
     if (!name.trim()) return
@@ -396,6 +437,25 @@ export function HabitTrackerCard({
           <IconPlus className="h-3.5 w-3.5" />
           Tambah habit
         </button>
+      )}
+
+      {/* Moon phase — progress habit HARI INI, terpisah dari XP/level Constellation */}
+      {habits.length > 0 && (
+        <div className="mt-5 flex items-center gap-3 border-t border-white/[0.08] pt-4">
+          <MoonPhase fraction={todayFraction} />
+          <div>
+            <p className="text-sm font-semibold text-[var(--dk-text)]">
+              {completedToday} dari {habits.length} habit selesai hari ini
+            </p>
+            <p className="text-xs text-[var(--dk-text-faint)]">
+              {todayFraction >= 1
+                ? 'Purnama penuh — semua kelar!'
+                : todayFraction === 0
+                  ? 'Belum ada yang dicentang hari ini'
+                  : 'Terus lengkapi biar bulannya penuh'}
+            </p>
+          </div>
+        </div>
       )}
     </div>
   )

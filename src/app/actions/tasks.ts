@@ -40,6 +40,48 @@ export async function createTask({
   return { error: null }
 }
 
+export async function updateTaskTitle(id: string, title: string) {
+  const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { error: 'Belum login' }
+  }
+
+  const { error } = await supabase.from('tasks').update({ title }).eq('id', id).eq('user_id', user.id)
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  revalidatePath('/')
+  return { error: null }
+}
+
+export async function deleteTask(id: string) {
+  const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { error: 'Belum login' }
+  }
+
+  const { error } = await supabase.from('tasks').delete().eq('id', id).eq('user_id', user.id)
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  revalidatePath('/')
+  return { error: null }
+}
+
 export async function toggleTaskCompleted(taskId: string, completed: boolean) {
   const supabase = await createClient()
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { createTask, toggleTaskCompleted } from '@/app/actions/tasks'
+import { createTask, toggleTaskCompleted, updateTaskTitle, deleteTask } from '@/app/actions/tasks'
 import { TASK_CATEGORIES, categoryColor } from '@/lib/taskCategories'
 
 type Task = {
@@ -64,19 +64,10 @@ function IconPlus({ className }: { className?: string }) {
     </svg>
   )
 }
-
-function IconStar({ className, filled }: { className?: string; filled?: boolean }) {
+function IconTrash({ className }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill={filled ? 'currentColor' : 'none'}
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 3l2.4 5.4L20 9.3l-4 3.9.9 5.8L12 16.3l-4.9 2.7.9-5.8-4-3.9 5.6-.9L12 3Z" />
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z" />
     </svg>
   )
 }
@@ -91,6 +82,8 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
   const [endTime, setEndTime] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState('')
 
   const filtered = filterTasks(tasks, tab)
 
@@ -122,6 +115,22 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
       next.delete(task.id)
       return next
     })
+  }
+
+  function startEditing(task: Task) {
+    setEditingId(task.id)
+    setEditingTitle(task.title)
+  }
+
+  async function saveEdit(id: string) {
+    if (!editingTitle.trim()) return
+    await updateTaskTitle(id, editingTitle.trim())
+    setEditingId(null)
+  }
+
+  async function handleDelete(task: Task) {
+    if (!window.confirm(`Hapus task "${task.title}"?`)) return
+    await deleteTask(task.id)
   }
 
   return (
@@ -215,8 +224,9 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
           filtered.map((task) => {
             const dueLabel = formatDueDate(task.due_date)
             const pending = pendingIds.has(task.id)
+            const isEditing = editingId === task.id
             return (
-              <div key={task.id} className="flex items-center gap-3 border-b border-white/[0.05] py-3 last:border-none">
+              <div key={task.id} className="group flex items-center gap-3 border-b border-white/[0.05] py-3 last:border-none">
                 <button
                   onClick={() => handleToggle(task)}
                   disabled={pending}
@@ -231,9 +241,23 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
                   )}
                 </button>
 
-                <span className={`flex-1 text-sm ${task.completed ? 'text-[var(--dk-text-soft)]' : 'text-[var(--dk-text)]'}`}>
-                  {task.title}
-                </span>
+                {isEditing ? (
+                  <input
+                    autoFocus
+                    value={editingTitle}
+                    onChange={(e) => setEditingTitle(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && saveEdit(task.id)}
+                    onBlur={() => saveEdit(task.id)}
+                    className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)]"
+                  />
+                ) : (
+                  <span
+                    onClick={() => startEditing(task)}
+                    className={`min-w-0 flex-1 cursor-text text-sm ${task.completed ? 'text-[var(--dk-text-soft)]' : 'text-[var(--dk-text)]'}`}
+                  >
+                    {task.title}
+                  </span>
+                )}
 
                 {task.category && (
                   <span
@@ -246,10 +270,12 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
 
                 {dueLabel && <span className="shrink-0 text-xs text-[var(--dk-text-faint)]">{dueLabel}</span>}
 
-                <IconStar
-                  className={`h-4 w-4 shrink-0 ${task.completed ? 'text-[var(--lav-400)]' : 'text-[var(--dk-text-faint)]'}`}
-                  filled={task.completed}
-                />
+                <button
+                  onClick={() => handleDelete(task)}
+                  className="shrink-0 text-[var(--dk-text-faint)] opacity-0 transition hover:text-red-400 group-hover:opacity-100"
+                >
+                  <IconTrash className="h-4 w-4" />
+                </button>
               </div>
             )
           })
