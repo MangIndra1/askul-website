@@ -5,6 +5,8 @@ import { WeatherCard } from '@/components/WeatherCard'
 import { CalendarCard } from '@/components/CalendarCard'
 import { TodayScheduleCard } from '@/components/TodayScheduleCard'
 import { QuickNotesCard } from '@/components/QuickNotesCard'
+import { MusicCard } from '@/components/MusicCard'
+import { HabitTrackerCard } from '@/components/HabitTrackerCard'
 import { Header } from './Header'
 
 export default async function TodayPage() {
@@ -32,6 +34,17 @@ export default async function TodayPage() {
     .eq('user_id', user!.id)
     .order('created_at', { ascending: false })
 
+  const { data: habits } = await supabase
+    .from('habits')
+    .select('id, name')
+    .eq('user_id', user!.id)
+    .order('created_at', { ascending: true })
+
+  const { data: habitLogs } = await supabase
+    .from('habit_logs')
+    .select('habit_id, log_date')
+    .eq('user_id', user!.id)
+
   return (
     <div className="flex flex-col gap-5">
       <Header displayName={profile?.display_name ?? 'kamu'} />
@@ -46,6 +59,11 @@ export default async function TodayPage() {
         <QuickNotesCard notes={quickNotes ?? []} />
         <CalendarCard tasks={tasks ?? []} />
         <TodayScheduleCard tasks={tasks ?? []} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_1.4fr]">
+        <MusicCard />
+        <HabitTrackerCard habits={habits ?? []} logs={habitLogs ?? []} />
       </div>
     </div>
   )
