@@ -2,6 +2,9 @@ import { createClient } from '@/utils/supabase/server'
 import { FocusTimer } from '@/components/FocusTimer'
 import { TasksCard } from '@/components/TasksCard'
 import { WeatherCard } from '@/components/WeatherCard'
+import { CalendarCard } from '@/components/CalendarCard'
+import { TodayScheduleCard } from '@/components/TodayScheduleCard'
+import { QuickNotesCard } from '@/components/QuickNotesCard'
 import { Header } from './Header'
 
 export default async function TodayPage() {
@@ -19,9 +22,15 @@ export default async function TodayPage() {
 
   const { data: tasks } = await supabase
     .from('tasks')
-    .select('id, title, due_date, completed')
+    .select('id, title, category, due_date, end_date, completed')
     .eq('user_id', user!.id)
     .order('due_date', { ascending: true, nullsFirst: false })
+
+  const { data: quickNotes } = await supabase
+    .from('quick_notes')
+    .select('id, content')
+    .eq('user_id', user!.id)
+    .order('created_at', { ascending: false })
 
   return (
     <div className="flex flex-col gap-5">
@@ -31,6 +40,12 @@ export default async function TodayPage() {
         <TasksCard tasks={tasks ?? []} />
         <FocusTimer />
         <WeatherCard />
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_1.25fr_1.18fr]">
+        <QuickNotesCard notes={quickNotes ?? []} />
+        <CalendarCard tasks={tasks ?? []} />
+        <TodayScheduleCard tasks={tasks ?? []} />
       </div>
     </div>
   )

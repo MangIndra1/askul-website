@@ -5,10 +5,14 @@ import { createClient } from '@/utils/supabase/server'
 
 export async function createTask({
   title,
+  category,
   dueDate,
+  endDate,
 }: {
   title: string
+  category: string | null
   dueDate: string | null
+  endDate: string | null
 }) {
   const supabase = await createClient()
 
@@ -23,7 +27,9 @@ export async function createTask({
   const { error } = await supabase.from('tasks').insert({
     user_id: user.id,
     title,
+    category,
     due_date: dueDate,
+    end_date: endDate,
   })
 
   if (error) {

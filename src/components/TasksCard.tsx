@@ -2,10 +2,12 @@
 
 import { useState } from 'react'
 import { createTask, toggleTaskCompleted } from '@/app/actions/tasks'
+import { TASK_CATEGORIES, categoryColor } from '@/lib/taskCategories'
 
 type Task = {
   id: string
   title: string
+  category: string | null
   due_date: string | null
   completed: boolean
 }
@@ -83,7 +85,10 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
   const [tab, setTab] = useState<Tab>('all')
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
+  const [category, setCategory] = useState('')
   const [dueDate, setDueDate] = useState('')
+  const [dueTime, setDueTime] = useState('')
+  const [endTime, setEndTime] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
 
@@ -92,9 +97,19 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
   async function handleAdd() {
     if (!title.trim()) return
     setSubmitting(true)
-    await createTask({ title: title.trim(), dueDate: dueDate || null })
+    const combinedDueDate = dueDate ? `${dueDate}T${dueTime || '00:00'}:00` : null
+    const combinedEndDate = dueDate && endTime ? `${dueDate}T${endTime}:00` : null
+    await createTask({
+      title: title.trim(),
+      category: category || null,
+      dueDate: combinedDueDate,
+      endDate: combinedEndDate,
+    })
     setTitle('')
+    setCategory('')
     setDueDate('')
+    setDueTime('')
+    setEndTime('')
     setAdding(false)
     setSubmitting(false)
   }
@@ -148,6 +163,18 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
             placeholder="Judul tugas..."
             className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-[var(--dk-text)] outline-none placeholder:text-[var(--dk-text-faint)] focus:border-[var(--lav-400)]"
           />
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)]"
+          >
+            <option value="" className="bg-[#171c37]">Tanpa kategori</option>
+            {TASK_CATEGORIES.map((c) => (
+              <option key={c.value} value={c.value} className="bg-[#171c37]">
+                {c.value}
+              </option>
+            ))}
+          </select>
           <div className="flex gap-2">
             <input
               type="date"
@@ -155,14 +182,29 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
               onChange={(e) => setDueDate(e.target.value)}
               className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)]"
             />
-            <button
-              onClick={handleAdd}
-              disabled={submitting || !title.trim()}
-              className="rounded-xl bg-[var(--lav-600)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-            >
-              Simpan
-            </button>
+            <input
+              type="time"
+              value={dueTime}
+              onChange={(e) => setDueTime(e.target.value)}
+              disabled={!dueDate}
+              className="w-24 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)] disabled:opacity-40"
+            />
+            <span className="flex items-center text-xs text-[var(--dk-text-faint)]">s/d</span>
+            <input
+              type="time"
+              value={endTime}
+              onChange={(e) => setEndTime(e.target.value)}
+              disabled={!dueDate || !dueTime}
+              className="w-24 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)] disabled:opacity-40"
+            />
           </div>
+          <button
+            onClick={handleAdd}
+            disabled={submitting || !title.trim()}
+            className="rounded-xl bg-[var(--lav-600)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            Simpan
+          </button>
         </div>
       )}
 
@@ -192,6 +234,15 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
                 <span className={`flex-1 text-sm ${task.completed ? 'text-[var(--dk-text-soft)]' : 'text-[var(--dk-text)]'}`}>
                   {task.title}
                 </span>
+
+                {task.category && (
+                  <span
+                    className="shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium"
+                    style={{ color: categoryColor(task.category) }}
+                  >
+                    {task.category}
+                  </span>
+                )}
 
                 {dueLabel && <span className="shrink-0 text-xs text-[var(--dk-text-faint)]">{dueLabel}</span>}
 
