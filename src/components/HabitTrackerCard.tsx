@@ -1,12 +1,18 @@
 'use client'
 
-import { useState } from 'react'
-import { createHabit, updateHabit, deleteHabit, toggleHabitLog } from '@/app/actions/habits'
+import { Fragment, useState } from 'react'
+import {
+  createHabit,
+  updateHabit,
+  deleteHabit,
+  toggleHabitLog,
+} from '@/app/actions/habits'
 
 type Habit = { id: string; name: string }
 type HabitLog = { habit_id: string; log_date: string }
 
 const DAY_LABELS = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min']
+
 const HABIT_COLORS = [
   'var(--lav-400)',
   'var(--status-orange)',
@@ -62,7 +68,7 @@ function IconChevronRight({ className }: { className?: string }) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="m9 18 6 6-6-6" />
+      <path d="m9 18 6-6-6-6" />
     </svg>
   )
 }
@@ -146,13 +152,17 @@ export function HabitTrackerCard({
   const [editingName, setEditingName] = useState('')
 
   const weekDates = getWeekDates(weekOffset)
-  const logSet = new Set(logs.map((l) => `${l.habit_id}_${l.log_date}`))
+  const logSet = new Set(
+    logs.map((l) => `${l.habit_id}_${l.log_date}`)
+  )
 
   async function handleAddHabit() {
     if (!name.trim()) return
 
     setSubmitting(true)
+
     await createHabit(name.trim())
+
     setName('')
     setAdding(false)
     setSubmitting(false)
@@ -265,12 +275,9 @@ export function HabitTrackerCard({
             const isEditing = editingId === habit.id
 
             return (
-              <>
+              <Fragment key={habit.id}>
                 {/* Habit Name */}
-                <div
-                  key={habit.id}
-                  className="group flex items-center gap-2 pr-2"
-                >
+                <div className="group flex items-center gap-2 pr-2">
                   <span
                     className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
                     style={{ backgroundColor: color }}
@@ -346,7 +353,7 @@ export function HabitTrackerCard({
                     </div>
                   )
                 })}
-              </>
+              </Fragment>
             )
           })}
         </div>
