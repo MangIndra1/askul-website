@@ -80,6 +80,8 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
   const [dueDate, setDueDate] = useState('')
   const [dueTime, setDueTime] = useState('')
   const [endTime, setEndTime] = useState('')
+  const [multiDay, setMultiDay] = useState(false)
+  const [endDate, setEndDate] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -90,8 +92,22 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
   async function handleAdd() {
     if (!title.trim()) return
     setSubmitting(true)
-    const combinedDueDate = dueDate ? `${dueDate}T${dueTime || '00:00'}:00` : null
-    const combinedEndDate = dueDate && endTime ? `${dueDate}T${endTime}:00` : null
+
+    let combinedDueDate: string | null = null
+    let combinedEndDate: string | null = null
+
+    if (dueDate) {
+      if (multiDay && endDate) {
+        // Acara multi-hari: nggak perlu jam spesifik, dianggap "sepanjang
+        // hari" dari tanggal awal sampai tanggal akhir.
+        combinedDueDate = `${dueDate}T00:00:00`
+        combinedEndDate = `${endDate}T23:59:59`
+      } else {
+        combinedDueDate = `${dueDate}T${dueTime || '00:00'}:00`
+        combinedEndDate = dueTime && endTime ? `${dueDate}T${endTime}:00` : null
+      }
+    }
+
     await createTask({
       title: title.trim(),
       category: category || null,
@@ -103,6 +119,8 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
     setDueDate('')
     setDueTime('')
     setEndTime('')
+    setMultiDay(false)
+    setEndDate('')
     setAdding(false)
     setSubmitting(false)
   }
@@ -184,6 +202,7 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
               </option>
             ))}
           </select>
+
           <div className="flex gap-2">
             <input
               type="date"
@@ -191,22 +210,51 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
               onChange={(e) => setDueDate(e.target.value)}
               className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)]"
             />
-            <input
-              type="time"
-              value={dueTime}
-              onChange={(e) => setDueTime(e.target.value)}
-              disabled={!dueDate}
-              className="w-24 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)] disabled:opacity-40"
-            />
-            <span className="flex items-center text-xs text-[var(--dk-text-faint)]">s/d</span>
-            <input
-              type="time"
-              value={endTime}
-              onChange={(e) => setEndTime(e.target.value)}
-              disabled={!dueDate || !dueTime}
-              className="w-24 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)] disabled:opacity-40"
-            />
+            {!multiDay && (
+              <>
+                <input
+                  type="time"
+                  value={dueTime}
+                  onChange={(e) => setDueTime(e.target.value)}
+                  disabled={!dueDate}
+                  className="w-24 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)] disabled:opacity-40"
+                />
+                <span className="flex items-center text-xs text-[var(--dk-text-faint)]">s/d</span>
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  disabled={!dueDate || !dueTime}
+                  className="w-24 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)] disabled:opacity-40"
+                />
+              </>
+            )}
           </div>
+
+          <label className="flex items-center gap-2 px-1 text-xs text-[var(--dk-text-soft)]">
+            <input
+              type="checkbox"
+              checked={multiDay}
+              onChange={(e) => setMultiDay(e.target.checked)}
+              className="h-3.5 w-3.5 accent-[var(--lav-600)]"
+            />
+            Acara multi-hari
+          </label>
+
+          {multiDay && (
+            <div className="flex items-center gap-2">
+              <span className="shrink-0 text-xs text-[var(--dk-text-faint)]">s/d tanggal</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                min={dueDate}
+                disabled={!dueDate}
+                className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)] disabled:opacity-40"
+              />
+            </div>
+          )}
+
           <button
             onClick={handleAdd}
             disabled={submitting || !title.trim()}
