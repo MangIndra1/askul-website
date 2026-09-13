@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { createTask, toggleTaskCompleted, updateTaskTitle, deleteTask } from '@/app/actions/tasks'
-import { TASK_CATEGORIES, categoryColor } from '@/lib/taskCategories'
+import { categoryColor, type TaskCategory } from '@/lib/taskCategories'
+import { occursOn, type RecurrenceFreq } from '@/lib/recurrence'
 
 type Task = {
   id: string
@@ -10,6 +11,10 @@ type Task = {
   category: string | null
   due_date: string | null
   completed: boolean
+  recurrence_freq: string | null
+  recurrence_interval: number
+  recurrence_days_of_week: number[] | null
+  recurrence_until: string | null
 }
 
 type Tab = 'all' | 'today' | 'upcoming' | 'completed'
@@ -44,9 +49,31 @@ function filterTasks(tasks: Task[], tab: Tab) {
   todayEnd.setHours(23, 59, 59, 999)
 
   if (tab === 'today') {
-    return tasks.filter(
-      (t) => !t.completed && t.due_date && new Date(t.due_date) >= todayStart && new Date(t.due_date) <= todayEnd
+    const direct = tasks.filter(
+      (t) =>
+        !t.completed &&
+        !t.recurrence_freq &&
+        t.due_date &&
+        new Date(t.due_date) >= todayStart &&
+        new Date(t.due_date) <= todayEnd
     )
+    const recurring = tasks.filter(
+      (t) =>
+        !t.completed &&
+        t.recurrence_freq &&
+        t.due_date &&
+        occursOn(
+          t.due_date,
+          {
+            freq: t.recurrence_freq as RecurrenceFreq,
+            interval: t.recurrence_interval,
+            daysOfWeek: t.recurrence_days_of_week,
+            until: t.recurrence_until,
+          },
+          todayStart
+        )
+    )
+    return [...direct, ...recurring]
   }
   if (tab === 'upcoming') {
     return tasks.filter((t) => !t.completed && t.due_date && new Date(t.due_date) > todayEnd)
@@ -72,7 +99,7 @@ function IconTrash({ className }: { className?: string }) {
   )
 }
 
-export function TasksCard({ tasks }: { tasks: Task[] }) {
+export function TasksCard({ tasks, categories }: { tasks: Task[]; categories: TaskCategory[] }) {
   const [tab, setTab] = useState<Tab>('all')
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
@@ -99,12 +126,14 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
     if (dueDate) {
       if (multiDay && endDate) {
         // Acara multi-hari: nggak perlu jam spesifik, dianggap "sepanjang
-        // hari" dari tanggal awal sampai tanggal akhir.
-        combinedDueDate = `${dueDate}T00:00:00`
-        combinedEndDate = `${endDate}T23:59:59`
+        // hari" dari tanggal awal sampai tanggal akhir. Tempelin offset
+        // WITA eksplisit (+08:00) — TANPA ini, Supabase nganggep string-nya
+        // UTC, bikin tanggal geser pas ditampilin balik di browser (WITA).
+        combinedDueDate = `${dueDate}T00:00:00+08:00`
+        combinedEndDate = `${endDate}T23:59:59+08:00`
       } else {
-        combinedDueDate = `${dueDate}T${dueTime || '00:00'}:00`
-        combinedEndDate = dueTime && endTime ? `${dueDate}T${endTime}:00` : null
+        combinedDueDate = `${dueDate}T${dueTime || '00:00'}:00+08:00`
+        combinedEndDate = dueTime && endTime ? `${dueDate}T${endTime}:00+08:00` : null
       }
     }
 
@@ -196,9 +225,9 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
             className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)]"
           >
             <option value="" className="bg-[#171c37]">Tanpa kategori</option>
-            {TASK_CATEGORIES.map((c) => (
-              <option key={c.value} value={c.value} className="bg-[#171c37]">
-                {c.value}
+            {categories.map((c) => (
+              <option key={c.id} value={c.name} className="bg-[#171c37]">
+                {c.name}
               </option>
             ))}
           </select>
@@ -277,10 +306,11 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
               <div key={task.id} className="group flex items-center gap-3 border-b border-white/[0.05] py-3 last:border-none">
                 <button
                   onClick={() => handleToggle(task)}
-                  disabled={pending}
+                  disabled={pending || Boolean(task.recurrence_freq)}
+                  title={task.recurrence_freq ? 'Task berulang belum bisa dicentang per-hari' : undefined}
                   className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition ${
                     task.completed ? 'border-transparent bg-[var(--lav-600)]' : 'border-[var(--dk-text-faint)]'
-                  } ${pending ? 'opacity-50' : ''}`}
+                  } ${pending || task.recurrence_freq ? 'opacity-50' : ''}`}
                 >
                   {task.completed && (
                     <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-white" fill="none" stroke="currentColor" strokeWidth="3">
@@ -303,6 +333,7 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
                     onClick={() => startEditing(task)}
                     className={`min-w-0 flex-1 cursor-text text-sm ${task.completed ? 'text-[var(--dk-text-soft)]' : 'text-[var(--dk-text)]'}`}
                   >
+                    {task.recurrence_freq && '↻ '}
                     {task.title}
                   </span>
                 )}
@@ -310,7 +341,7 @@ export function TasksCard({ tasks }: { tasks: Task[] }) {
                 {task.category && (
                   <span
                     className="shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium"
-                    style={{ color: categoryColor(task.category) }}
+                    style={{ color: categoryColor(categories, task.category) }}
                   >
                     {task.category}
                   </span>

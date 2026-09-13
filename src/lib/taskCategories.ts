@@ -1,11 +1,6 @@
-export const TASK_CATEGORIES = [
-  { value: 'Kuliah', color: 'var(--lav-400)' },
-  { value: 'Tugas', color: 'var(--pink-400)' },
-  { value: 'Meeting', color: 'var(--status-blue)' },
-  { value: 'Istirahat', color: 'var(--status-orange)' },
-  { value: 'Pribadi', color: 'var(--status-green)' },
-] as const
+export type TaskCategory = { id: string; name: string; color: string }
 
-export function categoryColor(category: string | null): string {
-  return TASK_CATEGORIES.find((c) => c.value === category)?.color ?? 'var(--dk-text-faint)'
+export function categoryColor(categories: TaskCategory[], categoryName: string | null): string {
+  if (!categoryName) return 'var(--dk-text-faint)'
+  return categories.find((c) => c.name === categoryName)?.color ?? 'var(--dk-text-faint)'
 }

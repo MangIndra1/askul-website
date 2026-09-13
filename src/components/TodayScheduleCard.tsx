@@ -1,4 +1,5 @@
-import { categoryColor } from '@/lib/taskCategories'
+import { categoryColor, type TaskCategory } from '@/lib/taskCategories'
+import { occursOn, buildOccurrenceDueDate, type RecurrenceFreq } from '@/lib/recurrence'
 
 type Task = {
   id: string
@@ -6,6 +7,10 @@ type Task = {
   category: string | null
   due_date: string | null
   end_date: string | null
+  recurrence_freq: string | null
+  recurrence_interval: number
+  recurrence_days_of_week: number[] | null
+  recurrence_until: string | null
 }
 
 function formatTime(dueDate: string) {
@@ -21,17 +26,40 @@ function hasExplicitTime(dueDate: string) {
   return !(d.getHours() === 0 && d.getMinutes() === 0)
 }
 
-export function TodayScheduleCard({ tasks }: { tasks: Task[] }) {
+export function TodayScheduleCard({ tasks, categories }: { tasks: Task[]; categories: TaskCategory[] }) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const tomorrow = new Date(today)
   tomorrow.setDate(tomorrow.getDate() + 1)
 
-  const todayTasks = tasks.filter((t) => {
+  // Task biasa (bukan berulang) yang due_date-nya emang hari ini.
+  const directTasks = tasks.filter((t) => {
+    if (t.recurrence_freq) return false
     if (!t.due_date) return false
     const d = new Date(t.due_date)
     return d >= today && d < tomorrow
   })
+
+  // Task BERULANG yang punya kemunculan hari ini — dibikinkan due_date
+  // "virtual" (tanggal hari ini, jam tetap dari aslinya) biar tampilannya
+  // konsisten sama task biasa.
+  const recurringToday = tasks
+    .filter((t): t is Task & { due_date: string; recurrence_freq: string } => Boolean(t.recurrence_freq && t.due_date))
+    .filter((t) =>
+      occursOn(
+        t.due_date,
+        {
+          freq: t.recurrence_freq as RecurrenceFreq,
+          interval: t.recurrence_interval,
+          daysOfWeek: t.recurrence_days_of_week,
+          until: t.recurrence_until,
+        },
+        today
+      )
+    )
+    .map((t) => ({ ...t, id: `${t.id}_today`, due_date: buildOccurrenceDueDate(t.due_date, today) }))
+
+  const todayTasks = [...directTasks, ...recurringToday]
 
   const timed = todayTasks
     .filter((t) => hasExplicitTime(t.due_date as string))
@@ -48,9 +76,10 @@ export function TodayScheduleCard({ tasks }: { tasks: Task[] }) {
       ) : (
         <div className="mt-4 flex flex-col gap-3">
           {ordered.map((task) => {
-            const color = categoryColor(task.category)
+            const color = categoryColor(categories, task.category)
             const startLabel = hasExplicitTime(task.due_date as string) ? formatTime(task.due_date as string) : null
             const endLabel = task.end_date ? formatTime(task.end_date) : null
+            const isRecurring = Boolean(task.recurrence_freq)
 
             return (
               <div
@@ -73,6 +102,7 @@ export function TodayScheduleCard({ tasks }: { tasks: Task[] }) {
                   <div className="flex items-center gap-2">
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
                     <p className="truncate text-sm font-semibold text-[var(--dk-text)]">
+                      {isRecurring && '↻ '}
                       {task.category ?? task.title}
                     </p>
                   </div>

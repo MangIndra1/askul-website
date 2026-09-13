@@ -24,9 +24,17 @@ export default async function TodayPage() {
 
   const { data: tasks } = await supabase
     .from('tasks')
-    .select('id, title, category, due_date, end_date, completed')
+    .select(
+      'id, title, category, due_date, end_date, completed, recurrence_freq, recurrence_interval, recurrence_days_of_week, recurrence_until'
+    )
     .eq('user_id', user!.id)
     .order('due_date', { ascending: true, nullsFirst: false })
+
+  const { data: categories } = await supabase
+    .from('task_categories')
+    .select('id, name, color')
+    .eq('user_id', user!.id)
+    .order('created_at', { ascending: true })
 
   const { data: quickNotes } = await supabase
     .from('quick_notes')
@@ -50,7 +58,7 @@ export default async function TodayPage() {
       <Header displayName={profile?.display_name ?? 'kamu'} />
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.25fr_1.17fr_1fr]">
-        <TasksCard tasks={tasks ?? []} />
+        <TasksCard tasks={tasks ?? []} categories={categories ?? []} />
         <FocusTimer />
         <WeatherCard />
       </div>
@@ -58,7 +66,7 @@ export default async function TodayPage() {
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_1.25fr_1.18fr]">
         <QuickNotesCard notes={quickNotes ?? []} />
         <CalendarCard tasks={tasks ?? []} />
-        <TodayScheduleCard tasks={tasks ?? []} />
+        <TodayScheduleCard tasks={tasks ?? []} categories={categories ?? []} />
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_1.4fr]">

@@ -30,10 +30,17 @@ export async function GoogleCalendarConnect() {
     .eq('user_id', user!.id)
     .maybeSingle()
 
+  const { count: unsyncedCount } = await supabase
+    .from('tasks')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user!.id)
+    .not('due_date', 'is', null)
+    .is('google_event_id', null)
+
   const redirectUri = `${process.env.NEXT_PUBLIC_SITE_URL}/api/auth/google/callback`
 
   if (connection) {
-    return <GoogleAccountMenu email={connection.google_email} redirectUri={redirectUri} />
+    return <GoogleAccountMenu email={connection.google_email} redirectUri={redirectUri} unsyncedCount={unsyncedCount ?? 0} />
   }
 
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({

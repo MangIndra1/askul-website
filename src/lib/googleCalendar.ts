@@ -1,19 +1,34 @@
 import { createClient } from '@/utils/supabase/server'
 
-const WITA_OFFSET = '+08:00'
+const WITA_MS = 8 * 60 * 60 * 1000
 
-// Ambil jam-menit LANGSUNG dari string (posisi karakter), BUKAN lewat
-// Date object — soalnya runtime server (Vercel) defaultnya zona UTC,
-// bukan WITA, jadi .getHours() dari Date object bisa salah di server
-// walau kodenya sama persis kayak yang jalan benar di browser.
-function hasExplicitTime(dateStr: string): boolean {
-  const hh = dateStr.slice(11, 13)
-  const mm = dateStr.slice(14, 16)
-  return !(hh === '00' && mm === '00')
+// Server (Vercel) jalan di runtime UTC, bukan WITA — jadi nggak bisa pakai
+// Date object + local getters (.getHours() dkk) buat nentuin "jam berapa
+// ini di WITA", soalnya itu bakal ngikutin timezone SERVER, bukan WITA.
+// Trik yang aman: geser instant UTC-nya +8 jam secara manual (di level
+// milidetik), terus baca pakai getter UTC (.getUTCHours() dkk) — itu
+// SELALU reflect angka mentah Date object, independen dari timezone
+// runtime manapun yang menjalankannya.
+function toWitaParts(isoStr: string) {
+  const utcMs = new Date(isoStr).getTime()
+  const w = new Date(utcMs + WITA_MS)
+  return {
+    year: w.getUTCFullYear(),
+    month: w.getUTCMonth() + 1,
+    day: w.getUTCDate(),
+    hours: w.getUTCHours(),
+    minutes: w.getUTCMinutes(),
+  }
 }
 
-function toDateOnly(dateStr: string): string {
-  return dateStr.slice(0, 10)
+function witaDateOnly(isoStr: string): string {
+  const p = toWitaParts(isoStr)
+  return `${p.year}-${String(p.month).padStart(2, '0')}-${String(p.day).padStart(2, '0')}`
+}
+
+function hasExplicitTimeWita(isoStr: string): boolean {
+  const p = toWitaParts(isoStr)
+  return !(p.hours === 0 && p.minutes === 0)
 }
 
 function addOneDay(dateOnlyStr: string): string {
@@ -24,13 +39,6 @@ function addOneDay(dateOnlyStr: string): string {
   const mm = (date.getUTCMonth() + 1).toString().padStart(2, '0')
   const dd = date.getUTCDate().toString().padStart(2, '0')
   return `${yy}-${mm}-${dd}`
-}
-
-// Ambil 19 karakter pertama (YYYY-MM-DDTHH:mm:ss) apa adanya, tempelin
-// offset WITA eksplisit — sekali lagi, nggak lewat Date object sama
-// sekali, biar hasil akhirnya nggak tersandung timezone runtime server.
-function toWitaDateTime(dateStr: string): string {
-  return `${dateStr.slice(0, 19)}${WITA_OFFSET}`
 }
 
 async function getValidAccessToken(userId: string): Promise<string | null> {
@@ -84,32 +92,57 @@ type TaskForSync = {
   category: string | null
   due_date: string | null
   end_date: string | null
+  recurrenceFreq?: string | null
+  recurrenceInterval?: number
+  recurrenceDaysOfWeek?: number[] | null
+  recurrenceUntil?: string | null
+}
+
+const RRULE_FREQ: Record<string, string> = { daily: 'DAILY', weekly: 'WEEKLY', monthly: 'MONTHLY', yearly: 'YEARLY' }
+const RRULE_DAY_CODES = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'] // 0=Min...6=Sab, sama urutan kayak kita
+
+function buildRRule(
+  freq: string,
+  interval: number,
+  daysOfWeek: number[] | null | undefined,
+  until: string | null | undefined
+): string {
+  const parts = [`FREQ=${RRULE_FREQ[freq]}`]
+  if (interval > 1) parts.push(`INTERVAL=${interval}`)
+  if (freq === 'weekly' && daysOfWeek && daysOfWeek.length > 0) {
+    parts.push(`BYDAY=${daysOfWeek.map((d) => RRULE_DAY_CODES[d]).join(',')}`)
+  }
+  if (until) {
+    parts.push(`UNTIL=${until.replace(/-/g, '')}T235959Z`)
+  }
+  return `RRULE:${parts.join(';')}`
 }
 
 function taskToGoogleEventBody(task: TaskForSync) {
   if (!task.due_date) return null
 
   const summary = task.category ? `[${task.category}] ${task.title}` : task.title
-  const isAllDay = !hasExplicitTime(task.due_date)
+  const isAllDay = !hasExplicitTimeWita(task.due_date)
 
-  if (isAllDay) {
-    // Task tanpa jam spesifik ATAU acara multi-hari -> event "sepanjang
-    // hari" di Google. Catatan: field end.date Google itu EKSKLUSIF
-    // (hari SETELAH hari terakhir), makanya perlu addOneDay.
-    const startDate = toDateOnly(task.due_date)
-    const endDate = task.end_date ? toDateOnly(task.end_date) : startDate
-    return {
-      summary,
-      start: { date: startDate },
-      end: { date: addOneDay(endDate) },
-    }
+  const body: Record<string, unknown> = isAllDay
+    ? {
+        summary,
+        start: { date: witaDateOnly(task.due_date) },
+        end: { date: addOneDay(task.end_date ? witaDateOnly(task.end_date) : witaDateOnly(task.due_date)) },
+      }
+    : {
+        summary,
+        start: { dateTime: task.due_date },
+        end: { dateTime: task.end_date ?? task.due_date },
+      }
+
+  if (task.recurrenceFreq) {
+    body.recurrence = [
+      buildRRule(task.recurrenceFreq, task.recurrenceInterval ?? 1, task.recurrenceDaysOfWeek, task.recurrenceUntil),
+    ]
   }
 
-  return {
-    summary,
-    start: { dateTime: toWitaDateTime(task.due_date) },
-    end: { dateTime: toWitaDateTime(task.end_date ?? task.due_date) },
-  }
+  return body
 }
 
 export async function hasGoogleConnection(userId: string): Promise<boolean> {
@@ -168,4 +201,56 @@ export async function deleteGoogleEvent(userId: string, eventId: string): Promis
   // 410 Gone artinya event-nya udah kehapus duluan di sisi Google —
   // dianggap sukses, bukan error.
   return res.ok || res.status === 410
+}
+
+export type PulledGoogleEvent = {
+  id: string
+  recurringEventId: string | null
+  title: string
+  start: string | null
+  end: string | null
+  isAllDay: boolean
+}
+
+// Ambil event dari Google Calendar dalam rentang [timeMin, timeMax].
+// singleEvents=true bikin Google OTOMATIS meng-expand event berulang
+// jadi kemunculan per-tanggal buat kita — nggak perlu parser RRULE sendiri.
+export async function fetchGoogleEvents(userId: string, timeMin: string, timeMax: string): Promise<PulledGoogleEvent[]> {
+  const accessToken = await getValidAccessToken(userId)
+  if (!accessToken) return []
+
+  const params = new URLSearchParams({
+    timeMin,
+    timeMax,
+    singleEvents: 'true',
+    orderBy: 'startTime',
+    maxResults: '250',
+  })
+
+  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+
+  if (!res.ok) return []
+
+  const data = await res.json()
+  const items = (data.items ?? []) as Array<{
+    id: string
+    recurringEventId?: string
+    summary?: string
+    start?: { date?: string; dateTime?: string }
+    end?: { date?: string; dateTime?: string }
+    status?: string
+  }>
+
+  return items
+    .filter((item) => item.status !== 'cancelled')
+    .map((item) => ({
+      id: item.id,
+      recurringEventId: item.recurringEventId ?? null,
+      title: item.summary ?? '(Tanpa judul)',
+      start: item.start?.dateTime ?? item.start?.date ?? null,
+      end: item.end?.dateTime ?? item.end?.date ?? null,
+      isAllDay: !item.start?.dateTime,
+    }))
 }

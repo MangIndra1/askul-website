@@ -11,9 +11,23 @@ export default async function CalendarPage() {
 
   const { data: tasks } = await supabase
     .from('tasks')
-    .select('id, title, category, due_date, end_date, completed')
+    .select(
+      'id, title, category, due_date, end_date, completed, recurrence_freq, recurrence_interval, recurrence_days_of_week, recurrence_until'
+    )
     .eq('user_id', user!.id)
     .order('due_date', { ascending: true, nullsFirst: false })
 
-  return <CalendarPageClient tasks={tasks ?? []} googleConnectSlot={<GoogleCalendarConnect />} />
+  const { data: categories } = await supabase
+    .from('task_categories')
+    .select('id, name, color')
+    .eq('user_id', user!.id)
+    .order('created_at', { ascending: true })
+
+  return (
+    <CalendarPageClient
+      tasks={tasks ?? []}
+      categories={categories ?? []}
+      googleConnectSlot={<GoogleCalendarConnect />}
+    />
+  )
 }

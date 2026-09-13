@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useMemo, Fragment, type ReactNode } from 'react'
+import { useState, useMemo, useEffect, Fragment, type ReactNode } from 'react'
 import { createTask } from '@/app/actions/tasks'
-import { TASK_CATEGORIES, categoryColor } from '@/lib/taskCategories'
+import { getGoogleEventsForRange } from '@/app/actions/googleCalendar'
+import { categoryColor, type TaskCategory } from '@/lib/taskCategories'
+import { occursOn, buildOccurrenceDueDate, type RecurrenceFreq } from '@/lib/recurrence'
 
 type Task = {
   id: string
@@ -11,6 +13,11 @@ type Task = {
   due_date: string | null
   end_date: string | null
   completed: boolean
+  recurrence_freq: string | null
+  recurrence_interval: number
+  recurrence_days_of_week: number[] | null
+  recurrence_until: string | null
+  isGoogleEvent?: boolean
 }
 
 const MONTH_NAMES = [
@@ -97,9 +104,11 @@ function IconPlus({ className }: { className?: string }) {
 
 export function CalendarPageClient({
   tasks,
+  categories,
   googleConnectSlot,
 }: {
   tasks: Task[]
+  categories: TaskCategory[]
   googleConnectSlot?: ReactNode
 }) {
   const [viewDate, setViewDate] = useState(() => new Date())
@@ -112,10 +121,61 @@ export function CalendarPageClient({
   const [multiDay, setMultiDay] = useState(false)
   const [multiDayEnd, setMultiDayEnd] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [googleEvents, setGoogleEvents] = useState<Task[]>([])
 
   const year = viewDate.getFullYear()
   const month = viewDate.getMonth()
   const today = new Date()
+
+  // Ambil event Google Calendar buat bulan yang lagi dilihat, tiap kali
+  // bulannya berubah. Dipetakan ke bentuk Task yang sama (biar bisa
+  // "numpang lewat" semua logic tampilan yang udah ada), ditandain
+  // isGoogleEvent=true buat perlakuan visual/interaksi yang beda.
+  useEffect(() => {
+    const timeMin = new Date(year, month, 1).toISOString()
+    const timeMax = new Date(year, month + 1, 1).toISOString()
+    let cancelled = false
+
+    function subtractOneDay(dateOnlyStr: string): string {
+      const [y, m, d] = dateOnlyStr.split('-').map(Number)
+      const date = new Date(y, m - 1, d)
+      date.setDate(date.getDate() - 1)
+      return toDateKey(date)
+    }
+
+    getGoogleEventsForRange(timeMin, timeMax).then((events) => {
+      if (cancelled) return
+      setGoogleEvents(
+        events
+          .filter((e) => e.start)
+          .map((e) => ({
+            id: `google_${e.id}`,
+            title: e.title,
+            category: null,
+            due_date: e.start,
+            // Google nyimpen end.date buat event sepanjang-hari sebagai
+            // EKSKLUSIF (hari setelah hari terakhir) — kita perlu mundurin
+            // 1 hari biar cocok sama konvensi due_date/end_date kita sendiri.
+            end_date: e.isAllDay && e.end ? subtractOneDay(e.end) : e.end,
+            completed: false,
+            recurrence_freq: null,
+            recurrence_interval: 1,
+            recurrence_days_of_week: null,
+            recurrence_until: null,
+            isGoogleEvent: true,
+          })) as Task[]
+      )
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [year, month])
+
+  // Gabungan task AsKul + event Google (buat bulan yang lagi dilihat) —
+  // semua komputasi tampilan di bawah (grid, panel detail, heatmap) pakai
+  // gabungan ini, bukan `tasks` polos.
+  const combinedTasks = useMemo(() => [...tasks, ...googleEvents], [tasks, googleEvents])
 
   // Dikelompokkan per MINGGU (bukan flat 42 sel) — biar gampang dipakai
   // buat nentuin span kolom bar per minggu.
@@ -136,11 +196,13 @@ export function CalendarPageClient({
   }, [year, month])
 
   // Task per tanggal (buat panel detail + titik di sel) — task multi-hari
-  // dimasukin ke SETIAP tanggal yang dia lewatin.
+  // dimasukin ke SETIAP tanggal yang dia lewatin. Task BERULANG sengaja
+  // di-skip di sini (return awal) — kemunculannya dihitung terpisah lewat
+  // recurringOccurrencesByDate di bawah, biar nggak dobel-hitung.
   const tasksByDate = useMemo(() => {
     const map = new Map<string, Task[]>()
-    for (const t of tasks) {
-      if (!t.due_date) continue
+    for (const t of combinedTasks) {
+      if (!t.due_date || t.recurrence_freq) continue
       const start = new Date(t.due_date)
       const startKey = toDateKey(start)
 
@@ -164,15 +226,75 @@ export function CalendarPageClient({
       map.get(startKey)!.push(t)
     }
     return map
-  }, [tasks])
+  }, [combinedTasks])
+
+  // Kemunculan task BERULANG di bulan yang lagi ditampilin — dihitung
+  // hari-per-hari lewat occursOn(), dibikinin due_date "virtual" (tanggal
+  // kemunculan, jam tetap dari aslinya).
+  const recurringOccurrencesByDate = useMemo(() => {
+    const map = new Map<string, Task[]>()
+    const recurringTasks = tasks.filter((t): t is Task & { due_date: string; recurrence_freq: string } =>
+      Boolean(t.recurrence_freq && t.due_date)
+    )
+    if (recurringTasks.length === 0) return map
+
+    const monthStart = new Date(year, month, 1)
+    const monthEnd = new Date(year, month + 1, 0)
+
+    for (const t of recurringTasks) {
+      const rule = {
+        freq: t.recurrence_freq as RecurrenceFreq,
+        interval: t.recurrence_interval,
+        daysOfWeek: t.recurrence_days_of_week,
+        until: t.recurrence_until,
+      }
+      const cursor = new Date(monthStart)
+      while (cursor <= monthEnd) {
+        if (occursOn(t.due_date, rule, cursor)) {
+          const key = toDateKey(cursor)
+          const occurrence: Task = { ...t, id: `${t.id}_${key}`, due_date: buildOccurrenceDueDate(t.due_date, cursor) }
+          if (!map.has(key)) map.set(key, [])
+          map.get(key)!.push(occurrence)
+        }
+        cursor.setDate(cursor.getDate() + 1)
+      }
+    }
+    return map
+  }, [tasks, year, month])
 
   // Bar per minggu: tiap task jadi SATU balok yang span beberapa kolom
   // sekaligus (pakai CSS grid-column), bukan potongan chip per hari.
+  // Task berulang jadi balok 1-hari terpisah tiap kemunculannya.
   const weekLanes = useMemo(() => {
     return weeks.map((week) => {
       const items: TaskBar[] = []
-      for (const t of tasks) {
+      for (const t of combinedTasks) {
         if (!t.due_date) continue
+
+        if (t.recurrence_freq) {
+          const rule = {
+            freq: t.recurrence_freq as RecurrenceFreq,
+            interval: t.recurrence_interval,
+            daysOfWeek: t.recurrence_days_of_week,
+            until: t.recurrence_until,
+          }
+          for (let col = 0; col < 7; col++) {
+            const day = week[col]
+            if (day === null) continue
+            const cellDate = new Date(year, month, day)
+            if (occursOn(t.due_date, rule, cellDate)) {
+              items.push({
+                task: { ...t, id: `${t.id}_${toDateKey(cellDate)}` },
+                startCol: col,
+                endCol: col,
+                isStart: true,
+                isEnd: true,
+              })
+            }
+          }
+          continue
+        }
+
         const taskStart = new Date(t.due_date)
         taskStart.setHours(0, 0, 0, 0)
         const taskEnd = t.end_date ? new Date(t.end_date) : new Date(t.due_date)
@@ -206,7 +328,7 @@ export function CalendarPageClient({
       items.sort((a, b) => a.startCol - b.startCol || b.endCol - b.startCol - (a.endCol - a.startCol))
       return assignLanes(items)
     })
-  }, [tasks, weeks, year, month])
+  }, [combinedTasks, weeks, year, month])
 
   // Data heatmap aktivitas per kategori — rolling window terakhir, nggak
   // terikat bulan yang lagi dinavigasi di grid.
@@ -225,14 +347,31 @@ export function CalendarPageClient({
     const map = new Map<string, number>()
     for (const t of tasks) {
       if (!t.due_date || !t.category) continue
+
+      if (t.recurrence_freq) {
+        const rule = {
+          freq: t.recurrence_freq as RecurrenceFreq,
+          interval: t.recurrence_interval,
+          daysOfWeek: t.recurrence_days_of_week,
+          until: t.recurrence_until,
+        }
+        for (const d of heatmapDates) {
+          if (occursOn(t.due_date, rule, d)) {
+            const key = `${t.category}_${toDateKey(d)}`
+            map.set(key, (map.get(key) ?? 0) + 1)
+          }
+        }
+        continue
+      }
+
       const key = `${t.category}_${toDateKey(new Date(t.due_date))}`
       map.set(key, (map.get(key) ?? 0) + 1)
     }
     return map
-  }, [tasks])
+  }, [tasks, heatmapDates])
 
   const selectedKey = toDateKey(selectedDate)
-  const selectedTasks = (tasksByDate.get(selectedKey) ?? [])
+  const selectedTasks = [...(tasksByDate.get(selectedKey) ?? []), ...(recurringOccurrencesByDate.get(selectedKey) ?? [])]
     .slice()
     .sort((a, b) => {
       const at = a.due_date ? new Date(a.due_date).getTime() : 0
@@ -261,11 +400,11 @@ export function CalendarPageClient({
     let combinedEnd: string | null
 
     if (multiDay && multiDayEnd) {
-      combinedDue = `${dateStr}T00:00:00`
-      combinedEnd = `${multiDayEnd}T23:59:59`
+      combinedDue = `${dateStr}T00:00:00+08:00`
+      combinedEnd = `${multiDayEnd}T23:59:59+08:00`
     } else {
-      combinedDue = `${dateStr}T${startTime || '00:00'}:00`
-      combinedEnd = startTime && endTime ? `${dateStr}T${endTime}:00` : null
+      combinedDue = `${dateStr}T${startTime || '00:00'}:00+08:00`
+      combinedEnd = startTime && endTime ? `${dateStr}T${endTime}:00+08:00` : null
     }
 
     await createTask({
@@ -372,10 +511,12 @@ export function CalendarPageClient({
                           style={{
                             gridColumnStart: bar.startCol + 1,
                             gridColumnEnd: bar.endCol + 2,
-                            backgroundColor: categoryColor(bar.task.category),
+                            backgroundColor: bar.task.isGoogleEvent ? '#4285F4' : categoryColor(categories, bar.task.category),
                           }}
                           title={bar.task.title}
                         >
+                          {bar.task.recurrence_freq && '↻ '}
+                          {bar.task.isGoogleEvent && 'G · '}
                           {bar.task.title}
                         </span>
                       ))}
@@ -404,7 +545,7 @@ export function CalendarPageClient({
               <p className="py-4 text-center text-sm text-[var(--dk-text-faint)]">Nggak ada task di hari ini.</p>
             ) : (
               selectedTasks.map((task) => {
-                const color = categoryColor(task.category)
+                const color = task.isGoogleEvent ? '#4285F4' : categoryColor(categories, task.category)
                 const startKey = task.due_date ? toDateKey(new Date(task.due_date)) : null
                 const endKey = task.end_date ? toDateKey(new Date(task.end_date)) : startKey
                 const isMultiDay = startKey !== endKey
@@ -434,6 +575,8 @@ export function CalendarPageClient({
                       <div className="flex items-center gap-2">
                         <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
                         <p className="truncate text-sm font-semibold text-[var(--dk-text)]">
+                          {task.recurrence_freq && '↻ '}
+                          {task.isGoogleEvent && 'G · '}
                           {task.category ?? task.title}
                         </p>
                       </div>
@@ -464,9 +607,9 @@ export function CalendarPageClient({
                   className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)]"
                 >
                   <option value="" className="bg-[#171c37]">Tanpa kategori</option>
-                  {TASK_CATEGORIES.map((c) => (
-                    <option key={c.value} value={c.value} className="bg-[#171c37]">
-                      {c.value}
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.name} className="bg-[#171c37]">
+                      {c.name}
                     </option>
                   ))}
                 </select>
@@ -544,16 +687,16 @@ export function CalendarPageClient({
                 </span>
               ))}
 
-              {TASK_CATEGORIES.map((c) => (
-                <Fragment key={c.value}>
-                  <span className="flex items-center truncate text-xs text-[var(--dk-text-soft)]">{c.value}</span>
+              {categories.map((c) => (
+                <Fragment key={c.id}>
+                  <span className="flex items-center truncate text-xs text-[var(--dk-text-soft)]">{c.name}</span>
                   {heatmapDates.map((d) => {
-                    const key = `${c.value}_${toDateKey(d)}`
+                    const key = `${c.name}_${toDateKey(d)}`
                     const count = heatmapCounts.get(key) ?? 0
                     return (
                       <div
                         key={key}
-                        title={`${c.value}, ${d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}: ${count} task`}
+                        title={`${c.name}, ${d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}: ${count} task`}
                         className="aspect-square rounded-md"
                         style={{ backgroundColor: c.color, opacity: opacityByCount(count) }}
                       />

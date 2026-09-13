@@ -13,10 +13,10 @@ type Profile = {
 const NAV_ITEMS = [
   { label: 'Today', href: '/', icon: IconHome },
   { label: 'Constellation', href: '/constellation', icon: IconStar },
+  { label: 'Tasks', href: '/tasks', icon: IconTasks },
   { label: 'Focus', href: '/focus', icon: IconTarget },
   { label: 'Journal', href: '/journal', icon: IconBook },
   { label: 'Calendar', href: '/calendar', icon: IconCalendar },
-  { label: 'Music', href: '/music', icon: IconMusic },
   { label: 'Stats', href: '/stats', icon: IconChart },
 ]
 
@@ -55,10 +55,12 @@ function IconCalendar({ className }: { className?: string }) {
     </svg>
   )
 }
-function IconMusic({ className }: { className?: string }) {
+function IconTasks({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+      <path d="m4 6 1.5 1.5L8 5" /><path d="M11 6h9" />
+      <path d="m4 12 1.5 1.5L8 11" /><path d="M11 12h9" />
+      <path d="m4 18 1.5 1.5L8 17" /><path d="M11 18h9" />
     </svg>
   )
 }
