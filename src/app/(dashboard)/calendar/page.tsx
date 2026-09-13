@@ -1,5 +1,6 @@
 import { createClient } from '@/utils/supabase/server'
 import { CalendarPageClient } from '@/components/CalendarPageClient'
+import { GoogleCalendarConnect } from '@/components/GoogleCalendarConnect'
 
 export default async function CalendarPage() {
   const supabase = await createClient()
@@ -14,5 +15,5 @@ export default async function CalendarPage() {
     .eq('user_id', user!.id)
     .order('due_date', { ascending: true, nullsFirst: false })
 
-  return <CalendarPageClient tasks={tasks ?? []} />
+  return <CalendarPageClient tasks={tasks ?? []} googleConnectSlot={<GoogleCalendarConnect />} />
 }

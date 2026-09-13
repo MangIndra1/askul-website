@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, Fragment, type ReactNode } from 'react'
 import { createTask } from '@/app/actions/tasks'
 import { TASK_CATEGORIES, categoryColor } from '@/lib/taskCategories'
 
@@ -95,7 +95,13 @@ function IconPlus({ className }: { className?: string }) {
   )
 }
 
-export function CalendarPageClient({ tasks }: { tasks: Task[] }) {
+export function CalendarPageClient({
+  tasks,
+  googleConnectSlot,
+}: {
+  tasks: Task[]
+  googleConnectSlot?: ReactNode
+}) {
   const [viewDate, setViewDate] = useState(() => new Date())
   const [selectedDate, setSelectedDate] = useState(() => new Date())
   const [adding, setAdding] = useState(false)
@@ -279,8 +285,8 @@ export function CalendarPageClient({ tasks }: { tasks: Task[] }) {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.6fr_1fr]">
-      <div className="glass rounded-[28px] p-6">
+    <div className="grid h-full min-h-0 grid-cols-1 gap-5 lg:grid-cols-[1.6fr_1fr]">
+      <div className="glass flex h-full min-h-0 flex-col overflow-y-auto rounded-[28px] p-6">
         <div className="flex items-center justify-between">
           <p className="text-[18px] font-bold tracking-[-0.3px] text-[var(--dk-text)]">Calendar</p>
           <button
@@ -387,6 +393,7 @@ export function CalendarPageClient({ tasks }: { tasks: Task[] }) {
       </div>
 
       <div className="flex flex-col gap-5">
+        {googleConnectSlot && <div className="w-full">{googleConnectSlot}</div>}
         <div className="glass flex flex-col rounded-[28px] p-6">
           <p className="text-[18px] font-bold tracking-[-0.3px] text-[var(--dk-text)]">
             {selectedDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })}
