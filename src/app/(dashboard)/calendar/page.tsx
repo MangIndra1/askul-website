@@ -23,10 +23,22 @@ export default async function CalendarPage() {
     .eq('user_id', user!.id)
     .order('created_at', { ascending: true })
 
+  const { data: schedules } = await supabase
+    .from('class_schedules')
+    .select('id, title, category, day_of_week, start_time, end_time, semester_start, semester_end')
+    .eq('user_id', user!.id)
+
+  const { data: exceptions } = await supabase
+    .from('class_schedule_exceptions')
+    .select('id, schedule_id, original_date, is_cancelled, override_date, override_start_time, override_end_time')
+    .eq('user_id', user!.id)
+
   return (
     <CalendarPageClient
       tasks={tasks ?? []}
       categories={categories ?? []}
+      schedules={schedules ?? []}
+      exceptions={exceptions ?? []}
       googleConnectSlot={<GoogleCalendarConnect />}
     />
   )

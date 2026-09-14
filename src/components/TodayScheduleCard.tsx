@@ -1,5 +1,6 @@
 import { categoryColor, type TaskCategory } from '@/lib/taskCategories'
 import { occursOn, buildOccurrenceDueDate, type RecurrenceFreq } from '@/lib/recurrence'
+import { computeAllClassOccurrences, type ClassSchedule, type ClassScheduleException } from '@/lib/classSchedule'
 
 type Task = {
   id: string
@@ -11,6 +12,8 @@ type Task = {
   recurrence_interval: number
   recurrence_days_of_week: number[] | null
   recurrence_until: string | null
+  isClassSchedule?: boolean
+  isCancelled?: boolean
 }
 
 function formatTime(dueDate: string) {
@@ -26,7 +29,17 @@ function hasExplicitTime(dueDate: string) {
   return !(d.getHours() === 0 && d.getMinutes() === 0)
 }
 
-export function TodayScheduleCard({ tasks, categories }: { tasks: Task[]; categories: TaskCategory[] }) {
+export function TodayScheduleCard({
+  tasks,
+  categories,
+  schedules = [],
+  exceptions = [],
+}: {
+  tasks: Task[]
+  categories: TaskCategory[]
+  schedules?: ClassSchedule[]
+  exceptions?: ClassScheduleException[]
+}) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const tomorrow = new Date(today)
@@ -59,7 +72,23 @@ export function TodayScheduleCard({ tasks, categories }: { tasks: Task[]; catego
     )
     .map((t) => ({ ...t, id: `${t.id}_today`, due_date: buildOccurrenceDueDate(t.due_date, today) }))
 
-  const todayTasks = [...directTasks, ...recurringToday]
+  // Kemunculan jadwal kuliah hari ini (termasuk yang dibatalkan — ditandain
+  // strikethrough, biar kelihatan sebagai pengingat "hari ini libur").
+  const classToday = computeAllClassOccurrences(schedules, exceptions, today, today).map((occ) => ({
+    id: occ.id,
+    title: occ.title,
+    category: occ.category,
+    due_date: `${occ.date}T${occ.startTime}:00`,
+    end_date: `${occ.date}T${occ.endTime}:00`,
+    recurrence_freq: null,
+    recurrence_interval: 1,
+    recurrence_days_of_week: null,
+    recurrence_until: null,
+    isClassSchedule: true,
+    isCancelled: occ.isCancelled,
+  }))
+
+  const todayTasks = [...directTasks, ...recurringToday, ...classToday]
 
   const timed = todayTasks
     .filter((t) => hasExplicitTime(t.due_date as string))
@@ -101,13 +130,21 @@ export function TodayScheduleCard({ tasks, categories }: { tasks: Task[]; catego
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
-                    <p className="truncate text-sm font-semibold text-[var(--dk-text)]">
+                    <p
+                      className={`truncate text-sm font-semibold ${
+                        task.isCancelled ? 'text-[var(--dk-text-faint)] line-through' : 'text-[var(--dk-text)]'
+                      }`}
+                    >
                       {isRecurring && '↻ '}
+                      {task.isClassSchedule && '🎓 '}
                       {task.category ?? task.title}
                     </p>
                   </div>
                   {task.category && (
-                    <p className="mt-0.5 truncate pl-3.5 text-xs text-[var(--dk-text-faint)]">{task.title}</p>
+                    <p className="mt-0.5 truncate pl-3.5 text-xs text-[var(--dk-text-faint)]">
+                      {task.title}
+                      {task.isCancelled && ' · Dibatalkan'}
+                    </p>
                   )}
                 </div>
               </div>

@@ -53,6 +53,16 @@ export default async function TodayPage() {
     .select('habit_id, log_date')
     .eq('user_id', user!.id)
 
+  const { data: schedules } = await supabase
+    .from('class_schedules')
+    .select('id, title, category, day_of_week, start_time, end_time, semester_start, semester_end')
+    .eq('user_id', user!.id)
+
+  const { data: exceptions } = await supabase
+    .from('class_schedule_exceptions')
+    .select('id, schedule_id, original_date, is_cancelled, override_date, override_start_time, override_end_time')
+    .eq('user_id', user!.id)
+
   return (
     <div className="flex flex-col gap-5">
       <Header displayName={profile?.display_name ?? 'kamu'} />
@@ -66,7 +76,12 @@ export default async function TodayPage() {
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_1.25fr_1.18fr]">
         <QuickNotesCard notes={quickNotes ?? []} />
         <CalendarCard tasks={tasks ?? []} />
-        <TodayScheduleCard tasks={tasks ?? []} categories={categories ?? []} />
+        <TodayScheduleCard
+          tasks={tasks ?? []}
+          categories={categories ?? []}
+          schedules={schedules ?? []}
+          exceptions={exceptions ?? []}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_1.4fr]">

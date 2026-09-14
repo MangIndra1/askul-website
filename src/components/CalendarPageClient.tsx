@@ -4,7 +4,8 @@ import { useState, useMemo, useEffect, Fragment, type ReactNode } from 'react'
 import { createTask } from '@/app/actions/tasks'
 import { getGoogleEventsForRange } from '@/app/actions/googleCalendar'
 import { categoryColor, type TaskCategory } from '@/lib/taskCategories'
-import { occursOn, buildOccurrenceDueDate, type RecurrenceFreq } from '@/lib/recurrence'
+import { occursOn, buildOccurrenceDueDate, DAY_OF_WEEK_LABELS, type RecurrenceFreq } from '@/lib/recurrence'
+import { computeAllClassOccurrences, type ClassSchedule, type ClassScheduleException } from '@/lib/classSchedule'
 
 type Task = {
   id: string
@@ -18,6 +19,7 @@ type Task = {
   recurrence_days_of_week: number[] | null
   recurrence_until: string | null
   isGoogleEvent?: boolean
+  isClassSchedule?: boolean
 }
 
 const MONTH_NAMES = [
@@ -105,10 +107,14 @@ function IconPlus({ className }: { className?: string }) {
 export function CalendarPageClient({
   tasks,
   categories,
+  schedules = [],
+  exceptions = [],
   googleConnectSlot,
 }: {
   tasks: Task[]
   categories: TaskCategory[]
+  schedules?: ClassSchedule[]
+  exceptions?: ClassScheduleException[]
   googleConnectSlot?: ReactNode
 }) {
   const [viewDate, setViewDate] = useState(() => new Date())
@@ -116,10 +122,14 @@ export function CalendarPageClient({
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState('')
+  const [mode, setMode] = useState<'once' | 'multiday' | 'recurring'>('once')
   const [startTime, setStartTime] = useState('')
   const [endTime, setEndTime] = useState('')
-  const [multiDay, setMultiDay] = useState(false)
   const [multiDayEnd, setMultiDayEnd] = useState('')
+  const [recFreq, setRecFreq] = useState<RecurrenceFreq>('daily')
+  const [recInterval, setRecInterval] = useState(1)
+  const [recDays, setRecDays] = useState<number[]>([])
+  const [recUntil, setRecUntil] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [googleEvents, setGoogleEvents] = useState<Task[]>([])
 
@@ -175,7 +185,36 @@ export function CalendarPageClient({
   // Gabungan task AsKul + event Google (buat bulan yang lagi dilihat) —
   // semua komputasi tampilan di bawah (grid, panel detail, heatmap) pakai
   // gabungan ini, bukan `tasks` polos.
-  const combinedTasks = useMemo(() => [...tasks, ...googleEvents], [tasks, googleEvents])
+  // Kemunculan jadwal kuliah buat bulan yang lagi ditampilin — dihitung
+  // lokal (nggak butuh network, beda sama Google events), jadi cukup
+  // useMemo biasa. Yang dibatalkan sengaja di-skip dari Calendar (biar
+  // grid tetap bersih) — beda sama Today's Schedule yang nampilinnya.
+  const classOccurrenceTasks = useMemo(() => {
+    const monthStart = new Date(year, month, 1)
+    const monthEnd = new Date(year, month + 1, 0)
+    return computeAllClassOccurrences(schedules, exceptions, monthStart, monthEnd)
+      .filter((occ) => !occ.isCancelled)
+      .map(
+        (occ): Task => ({
+          id: occ.id,
+          title: occ.title,
+          category: occ.category,
+          due_date: `${occ.date}T${occ.startTime}:00`,
+          end_date: `${occ.date}T${occ.endTime}:00`,
+          completed: false,
+          recurrence_freq: null,
+          recurrence_interval: 1,
+          recurrence_days_of_week: null,
+          recurrence_until: null,
+          isClassSchedule: true,
+        })
+      )
+  }, [schedules, exceptions, year, month])
+
+  const combinedTasks = useMemo(
+    () => [...tasks, ...googleEvents, ...classOccurrenceTasks],
+    [tasks, googleEvents, classOccurrenceTasks]
+  )
 
   // Dikelompokkan per MINGGU (bukan flat 42 sel) — biar gampang dipakai
   // buat nentuin span kolom bar per minggu.
@@ -391,17 +430,30 @@ export function CalendarPageClient({
     setSelectedDate(now)
   }
 
+  function toggleRecDay(day: number) {
+    setRecDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort((a, b) => a - b)))
+  }
+
   async function handleAdd() {
     if (!title.trim()) return
     setSubmitting(true)
     const dateStr = toDateKey(selectedDate)
 
     let combinedDue: string
-    let combinedEnd: string | null
+    let combinedEnd: string | null = null
+    let recurrence: { freq: RecurrenceFreq | null; interval: number; daysOfWeek: number[] | null; until: string | null } | undefined
 
-    if (multiDay && multiDayEnd) {
+    if (mode === 'recurring') {
+      combinedDue = `${dateStr}T${startTime || '00:00'}:00+08:00`
+      recurrence = {
+        freq: recFreq,
+        interval: recInterval,
+        daysOfWeek: recFreq === 'weekly' ? recDays : null,
+        until: recUntil || null,
+      }
+    } else if (mode === 'multiday') {
       combinedDue = `${dateStr}T00:00:00+08:00`
-      combinedEnd = `${multiDayEnd}T23:59:59+08:00`
+      combinedEnd = multiDayEnd ? `${multiDayEnd}T23:59:59+08:00` : null
     } else {
       combinedDue = `${dateStr}T${startTime || '00:00'}:00+08:00`
       combinedEnd = startTime && endTime ? `${dateStr}T${endTime}:00+08:00` : null
@@ -412,13 +464,18 @@ export function CalendarPageClient({
       category: category || null,
       dueDate: combinedDue,
       endDate: combinedEnd,
+      recurrence,
     })
     setTitle('')
     setCategory('')
+    setMode('once')
     setStartTime('')
     setEndTime('')
-    setMultiDay(false)
     setMultiDayEnd('')
+    setRecFreq('daily')
+    setRecInterval(1)
+    setRecDays([])
+    setRecUntil('')
     setAdding(false)
     setSubmitting(false)
   }
@@ -517,6 +574,7 @@ export function CalendarPageClient({
                         >
                           {bar.task.recurrence_freq && '↻ '}
                           {bar.task.isGoogleEvent && 'G · '}
+                          {bar.task.isClassSchedule && '🎓 '}
                           {bar.task.title}
                         </span>
                       ))}
@@ -577,6 +635,7 @@ export function CalendarPageClient({
                         <p className="truncate text-sm font-semibold text-[var(--dk-text)]">
                           {task.recurrence_freq && '↻ '}
                           {task.isGoogleEvent && 'G · '}
+                          {task.isClassSchedule && '🎓 '}
                           {task.category ?? task.title}
                         </p>
                       </div>
@@ -613,35 +672,40 @@ export function CalendarPageClient({
                     </option>
                   ))}
                 </select>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    disabled={multiDay}
-                    className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)] disabled:opacity-40"
-                  />
-                  <span className="text-xs text-[var(--dk-text-faint)]">s/d</span>
-                  <input
-                    type="time"
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                    disabled={!startTime || multiDay}
-                    className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)] disabled:opacity-40"
-                  />
+                <div className="flex gap-2">
+                  {(['once', 'multiday', 'recurring'] as const).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setMode(m)}
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                        mode === m ? 'bg-[var(--lav-600)] text-white' : 'bg-white/[0.06] text-[var(--dk-text-soft)]'
+                      }`}
+                    >
+                      {m === 'once' ? 'Sekali' : m === 'multiday' ? 'Multi-hari' : 'Berulang'}
+                    </button>
+                  ))}
                 </div>
 
-                <label className="flex items-center gap-2 px-1 text-xs text-[var(--dk-text-soft)]">
-                  <input
-                    type="checkbox"
-                    checked={multiDay}
-                    onChange={(e) => setMultiDay(e.target.checked)}
-                    className="h-3.5 w-3.5 accent-[var(--lav-600)]"
-                  />
-                  Acara multi-hari
-                </label>
+                {mode === 'once' && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="time"
+                      value={startTime}
+                      onChange={(e) => setStartTime(e.target.value)}
+                      className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)]"
+                    />
+                    <span className="text-xs text-[var(--dk-text-faint)]">s/d</span>
+                    <input
+                      type="time"
+                      value={endTime}
+                      onChange={(e) => setEndTime(e.target.value)}
+                      disabled={!startTime}
+                      className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)] disabled:opacity-40"
+                    />
+                  </div>
+                )}
 
-                {multiDay && (
+                {mode === 'multiday' && (
                   <div className="flex items-center gap-2">
                     <span className="shrink-0 text-xs text-[var(--dk-text-faint)]">s/d tanggal</span>
                     <input
@@ -651,6 +715,58 @@ export function CalendarPageClient({
                       min={toDateKey(selectedDate)}
                       className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)]"
                     />
+                  </div>
+                )}
+
+                {mode === 'recurring' && (
+                  <div className="flex flex-col gap-2 rounded-xl bg-white/[0.03] p-3">
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={recFreq}
+                        onChange={(e) => setRecFreq(e.target.value as RecurrenceFreq)}
+                        className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)]"
+                      >
+                        <option value="daily" className="bg-[#171c37]">Harian</option>
+                        <option value="weekly" className="bg-[#171c37]">Mingguan</option>
+                        <option value="monthly" className="bg-[#171c37]">Bulanan</option>
+                        <option value="yearly" className="bg-[#171c37]">Tahunan</option>
+                      </select>
+                      <span className="shrink-0 text-xs text-[var(--dk-text-faint)]">tiap</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={recInterval}
+                        onChange={(e) => setRecInterval(Math.max(1, Number(e.target.value) || 1))}
+                        className="w-16 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)]"
+                      />
+                    </div>
+
+                    {recFreq === 'weekly' && (
+                      <div className="flex gap-1.5">
+                        {DAY_OF_WEEK_LABELS.map((label, i) => (
+                          <button
+                            key={i}
+                            onClick={() => toggleRecDay(i)}
+                            className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-semibold transition ${
+                              recDays.includes(i) ? 'bg-[var(--lav-600)] text-white' : 'bg-white/[0.06] text-[var(--dk-text-soft)]'
+                            }`}
+                          >
+                            {label.charAt(0)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2">
+                      <span className="shrink-0 text-xs text-[var(--dk-text-faint)]">Berakhir (opsional)</span>
+                      <input
+                        type="date"
+                        value={recUntil}
+                        onChange={(e) => setRecUntil(e.target.value)}
+                        min={toDateKey(selectedDate)}
+                        className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)]"
+                      />
+                    </div>
                   </div>
                 )}
 

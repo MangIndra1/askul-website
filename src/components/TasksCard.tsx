@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { createTask, toggleTaskCompleted, updateTaskTitle, deleteTask } from '@/app/actions/tasks'
 import { categoryColor, type TaskCategory } from '@/lib/taskCategories'
-import { occursOn, type RecurrenceFreq } from '@/lib/recurrence'
+import { occursOn, DAY_OF_WEEK_LABELS, type RecurrenceFreq } from '@/lib/recurrence'
 
 type Task = {
   id: string
@@ -104,17 +105,48 @@ export function TasksCard({ tasks, categories }: { tasks: Task[]; categories: Ta
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState('')
+  const [mode, setMode] = useState<'once' | 'multiday' | 'recurring'>('once')
   const [dueDate, setDueDate] = useState('')
   const [dueTime, setDueTime] = useState('')
   const [endTime, setEndTime] = useState('')
-  const [multiDay, setMultiDay] = useState(false)
-  const [endDate, setEndDate] = useState('')
+  const [multiDayEnd, setMultiDayEnd] = useState('')
+  const [recFreq, setRecFreq] = useState<RecurrenceFreq>('daily')
+  const [recInterval, setRecInterval] = useState(1)
+  const [recDays, setRecDays] = useState<number[]>([])
+  const [recUntil, setRecUntil] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
 
-  const filtered = filterTasks(tasks, tab)
+  const sorted = filterTasks(tasks, tab)
+    .slice()
+    .sort((a, b) => {
+      const at = a.due_date ? new Date(a.due_date).getTime() : 0
+      const bt = b.due_date ? new Date(b.due_date).getTime() : 0
+      return bt - at // terbaru (tanggal paling jauh ke depan) duluan
+    })
+  const filtered = sorted.slice(0, 7)
+  const hasMore = sorted.length > 7
+
+  function resetForm() {
+    setTitle('')
+    setCategory('')
+    setMode('once')
+    setDueDate('')
+    setDueTime('')
+    setEndTime('')
+    setMultiDayEnd('')
+    setRecFreq('daily')
+    setRecInterval(1)
+    setRecDays([])
+    setRecUntil('')
+    setAdding(false)
+  }
+
+  function toggleRecDay(day: number) {
+    setRecDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort((a, b) => a - b)))
+  }
 
   async function handleAdd() {
     if (!title.trim()) return
@@ -122,19 +154,26 @@ export function TasksCard({ tasks, categories }: { tasks: Task[]; categories: Ta
 
     let combinedDueDate: string | null = null
     let combinedEndDate: string | null = null
+    let recurrence: { freq: RecurrenceFreq | null; interval: number; daysOfWeek: number[] | null; until: string | null } | undefined
 
-    if (dueDate) {
-      if (multiDay && endDate) {
-        // Acara multi-hari: nggak perlu jam spesifik, dianggap "sepanjang
-        // hari" dari tanggal awal sampai tanggal akhir. Tempelin offset
-        // WITA eksplisit (+08:00) — TANPA ini, Supabase nganggep string-nya
-        // UTC, bikin tanggal geser pas ditampilin balik di browser (WITA).
-        combinedDueDate = `${dueDate}T00:00:00+08:00`
-        combinedEndDate = `${endDate}T23:59:59+08:00`
-      } else {
-        combinedDueDate = `${dueDate}T${dueTime || '00:00'}:00+08:00`
-        combinedEndDate = dueTime && endTime ? `${dueDate}T${endTime}:00+08:00` : null
+    if (mode === 'recurring') {
+      combinedDueDate = dueDate ? `${dueDate}T${dueTime || '00:00'}:00+08:00` : null
+      recurrence = {
+        freq: recFreq,
+        interval: recInterval,
+        daysOfWeek: recFreq === 'weekly' ? recDays : null,
+        until: recUntil || null,
       }
+    } else if (mode === 'multiday') {
+      // Acara multi-hari: nggak perlu jam spesifik, dianggap "sepanjang
+      // hari" dari tanggal awal sampai tanggal akhir. Tempelin offset
+      // WITA eksplisit (+08:00) — TANPA ini, Supabase nganggep string-nya
+      // UTC, bikin tanggal geser pas ditampilin balik di browser (WITA).
+      combinedDueDate = dueDate ? `${dueDate}T00:00:00+08:00` : null
+      combinedEndDate = multiDayEnd ? `${multiDayEnd}T23:59:59+08:00` : null
+    } else {
+      combinedDueDate = dueDate ? `${dueDate}T${dueTime || '00:00'}:00+08:00` : null
+      combinedEndDate = dueDate && dueTime && endTime ? `${dueDate}T${endTime}:00+08:00` : null
     }
 
     await createTask({
@@ -142,15 +181,9 @@ export function TasksCard({ tasks, categories }: { tasks: Task[]; categories: Ta
       category: category || null,
       dueDate: combinedDueDate,
       endDate: combinedEndDate,
+      recurrence,
     })
-    setTitle('')
-    setCategory('')
-    setDueDate('')
-    setDueTime('')
-    setEndTime('')
-    setMultiDay(false)
-    setEndDate('')
-    setAdding(false)
+    resetForm()
     setSubmitting(false)
   }
 
@@ -193,7 +226,7 @@ export function TasksCard({ tasks, categories }: { tasks: Task[]; categories: Ta
         </button>
       </div>
 
-      <div className="mt-4 flex gap-4">
+      <div className="mt-4 flex shrink-0 gap-4">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -210,7 +243,7 @@ export function TasksCard({ tasks, categories }: { tasks: Task[]; categories: Ta
       </div>
 
       {adding && (
-        <div className="mt-4 flex flex-col gap-2 rounded-2xl bg-white/[0.04] p-3">
+        <div className="mt-4 flex shrink-0 flex-col gap-2 rounded-2xl bg-white/[0.04] p-3">
           <input
             autoFocus
             value={title}
@@ -233,54 +266,109 @@ export function TasksCard({ tasks, categories }: { tasks: Task[]; categories: Ta
           </select>
 
           <div className="flex gap-2">
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)]"
-            />
-            {!multiDay && (
-              <>
-                <input
-                  type="time"
-                  value={dueTime}
-                  onChange={(e) => setDueTime(e.target.value)}
-                  disabled={!dueDate}
-                  className="w-24 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)] disabled:opacity-40"
-                />
-                <span className="flex items-center text-xs text-[var(--dk-text-faint)]">s/d</span>
-                <input
-                  type="time"
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
-                  disabled={!dueDate || !dueTime}
-                  className="w-24 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)] disabled:opacity-40"
-                />
-              </>
-            )}
+            {(['once', 'multiday', 'recurring'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                  mode === m ? 'bg-[var(--lav-600)] text-white' : 'bg-white/[0.06] text-[var(--dk-text-soft)]'
+                }`}
+              >
+                {m === 'once' ? 'Sekali' : m === 'multiday' ? 'Multi-hari' : 'Berulang'}
+              </button>
+            ))}
           </div>
 
-          <label className="flex items-center gap-2 px-1 text-xs text-[var(--dk-text-soft)]">
-            <input
-              type="checkbox"
-              checked={multiDay}
-              onChange={(e) => setMultiDay(e.target.checked)}
-              className="h-3.5 w-3.5 accent-[var(--lav-600)]"
-            />
-            Acara multi-hari
-          </label>
+          <input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)]"
+          />
 
-          {multiDay && (
+          {mode === 'once' && (
+            <div className="flex items-center gap-2">
+              <input
+                type="time"
+                value={dueTime}
+                onChange={(e) => setDueTime(e.target.value)}
+                disabled={!dueDate}
+                className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)] disabled:opacity-40"
+              />
+              <span className="text-xs text-[var(--dk-text-faint)]">s/d</span>
+              <input
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                disabled={!dueDate || !dueTime}
+                className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)] disabled:opacity-40"
+              />
+            </div>
+          )}
+
+          {mode === 'multiday' && (
             <div className="flex items-center gap-2">
               <span className="shrink-0 text-xs text-[var(--dk-text-faint)]">s/d tanggal</span>
               <input
                 type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                value={multiDayEnd}
+                onChange={(e) => setMultiDayEnd(e.target.value)}
                 min={dueDate}
                 disabled={!dueDate}
                 className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)] disabled:opacity-40"
               />
+            </div>
+          )}
+
+          {mode === 'recurring' && (
+            <div className="flex flex-col gap-2 rounded-xl bg-white/[0.03] p-3">
+              <div className="flex items-center gap-2">
+                <select
+                  value={recFreq}
+                  onChange={(e) => setRecFreq(e.target.value as RecurrenceFreq)}
+                  className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)]"
+                >
+                  <option value="daily" className="bg-[#171c37]">Harian</option>
+                  <option value="weekly" className="bg-[#171c37]">Mingguan</option>
+                  <option value="monthly" className="bg-[#171c37]">Bulanan</option>
+                  <option value="yearly" className="bg-[#171c37]">Tahunan</option>
+                </select>
+                <span className="shrink-0 text-xs text-[var(--dk-text-faint)]">tiap</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={recInterval}
+                  onChange={(e) => setRecInterval(Math.max(1, Number(e.target.value) || 1))}
+                  className="w-16 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)]"
+                />
+              </div>
+
+              {recFreq === 'weekly' && (
+                <div className="flex gap-1.5">
+                  {DAY_OF_WEEK_LABELS.map((label, i) => (
+                    <button
+                      key={i}
+                      onClick={() => toggleRecDay(i)}
+                      className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-semibold transition ${
+                        recDays.includes(i) ? 'bg-[var(--lav-600)] text-white' : 'bg-white/[0.06] text-[var(--dk-text-soft)]'
+                      }`}
+                    >
+                      {label.charAt(0)}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <span className="shrink-0 text-xs text-[var(--dk-text-faint)]">Berakhir (opsional)</span>
+                <input
+                  type="date"
+                  value={recUntil}
+                  onChange={(e) => setRecUntil(e.target.value)}
+                  min={dueDate}
+                  className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-[var(--dk-text)] outline-none focus:border-[var(--lav-400)]"
+                />
+              </div>
             </div>
           )}
 
@@ -360,6 +448,18 @@ export function TasksCard({ tasks, categories }: { tasks: Task[]; categories: Ta
           })
         )}
       </div>
+
+      {hasMore && (
+        <Link
+          href="/tasks"
+          className="mt-3 flex items-center justify-center gap-1 rounded-xl bg-white/[0.04] py-2 text-xs font-semibold text-[var(--dk-text-soft)] transition hover:bg-white/[0.08] hover:text-[var(--dk-text)]"
+        >
+          Lihat Semua ({sorted.length})
+          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m9 18 6-6-6-6" />
+          </svg>
+        </Link>
+      )}
     </div>
   )
 }

@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { createTaskCategory, updateTaskCategory, deleteTaskCategory } from '@/app/actions/taskCategories'
 import { createTask, updateTask, deleteTask, toggleTaskCompleted } from '@/app/actions/tasks'
+import { ClassScheduleForm } from '@/components/ClassScheduleForm'
+import type { ClassSchedule, ClassScheduleException } from '@/lib/classSchedule'
 import { categoryColor, type TaskCategory } from '@/lib/taskCategories'
 import { describeRecurrence, DAY_OF_WEEK_LABELS, type RecurrenceFreq } from '@/lib/recurrence'
 
@@ -56,7 +58,17 @@ function IconCheck({ className }: { className?: string }) {
   )
 }
 
-export function TasksPageClient({ categories, tasks }: { categories: TaskCategory[]; tasks: Task[] }) {
+export function TasksPageClient({
+  categories,
+  tasks,
+  schedules,
+  exceptions,
+}: {
+  categories: TaskCategory[]
+  tasks: Task[]
+  schedules: ClassSchedule[]
+  exceptions: ClassScheduleException[]
+}) {
   const [addingCategory, setAddingCategory] = useState(false)
   const [newCatName, setNewCatName] = useState('')
   const [newCatColor, setNewCatColor] = useState(CATEGORY_COLOR_OPTIONS[0])
@@ -511,6 +523,8 @@ export function TasksPageClient({ categories, tasks }: { categories: TaskCategor
           )}
         </div>
       </div>
+
+      <ClassScheduleForm categories={categories} schedules={schedules} exceptions={exceptions} />
     </div>
   )
 }
