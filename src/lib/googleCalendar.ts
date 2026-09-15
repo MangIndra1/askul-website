@@ -254,3 +254,203 @@ export async function fetchGoogleEvents(userId: string, timeMin: string, timeMax
       isAllDay: !item.start?.dateTime,
     }))
 }
+
+type ClassScheduleForSync = {
+  title: string
+  category: string | null
+  dayOfWeek: number
+  startTime: string
+  endTime: string
+  semesterStart: string
+  semesterEnd: string
+}
+
+function firstOccurrenceDate(semesterStart: string, dayOfWeek: number): string {
+  const d = new Date(`${semesterStart}T00:00:00`)
+  while (d.getDay() !== dayOfWeek) {
+    d.setDate(d.getDate() + 1)
+  }
+  const y = d.getFullYear()
+  const m = (d.getMonth() + 1).toString().padStart(2, '0')
+  const dd = d.getDate().toString().padStart(2, '0')
+  return `${y}-${m}-${dd}`
+}
+
+// Push aturan jadwal kuliah sebagai SATU recurring event di Google (pakai
+// RRULE) — bukan banyak event terpisah.
+export async function pushClassScheduleToGoogle(userId: string, schedule: ClassScheduleForSync): Promise<string | null> {
+  const accessToken = await getValidAccessToken(userId)
+  if (!accessToken) return null
+
+  const firstDate = firstOccurrenceDate(schedule.semesterStart, schedule.dayOfWeek)
+  const summary = schedule.category ? `[${schedule.category}] ${schedule.title}` : schedule.title
+  const rrule = buildRRule('weekly', 1, [schedule.dayOfWeek], schedule.semesterEnd)
+
+  const body = {
+    summary,
+    start: { dateTime: `${firstDate}T${schedule.startTime}:00+08:00` },
+    end: { dateTime: `${firstDate}T${schedule.endTime}:00+08:00` },
+    recurrence: [rrule],
+  }
+
+  const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+  if (!res.ok) return null
+  const data = await res.json()
+  return data.id ?? null
+}
+
+export async function updateClassScheduleInGoogle(
+  userId: string,
+  eventId: string,
+  schedule: ClassScheduleForSync
+): Promise<boolean> {
+  const accessToken = await getValidAccessToken(userId)
+  if (!accessToken) return false
+
+  const firstDate = firstOccurrenceDate(schedule.semesterStart, schedule.dayOfWeek)
+  const summary = schedule.category ? `[${schedule.category}] ${schedule.title}` : schedule.title
+  const rrule = buildRRule('weekly', 1, [schedule.dayOfWeek], schedule.semesterEnd)
+
+  const body = {
+    summary,
+    start: { dateTime: `${firstDate}T${schedule.startTime}:00+08:00` },
+    end: { dateTime: `${firstDate}T${schedule.endTime}:00+08:00` },
+    recurrence: [rrule],
+  }
+
+  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+  return res.ok
+}
+
+export async function deleteClassScheduleFromGoogle(userId: string, eventId: string): Promise<boolean> {
+  return deleteGoogleEvent(userId, eventId)
+}
+
+// Cari ID instance SPESIFIK dari recurring event, berdasarkan tanggal
+// ASLI kemunculannya (bukan tanggal barunya kalau udah dipindah). Nyari
+// di jendela lebar (+/-45 hari) dan cocokin lewat originalStartTime —
+// lebih aman daripada nebak posisinya bakal tepat di timeMin/timeMax.
+async function findGoogleEventInstance(
+  userId: string,
+  recurringEventId: string,
+  originalDate: string
+): Promise<string | null> {
+  const accessToken = await getValidAccessToken(userId)
+  if (!accessToken) return null
+
+  const target = new Date(`${originalDate}T00:00:00`)
+  const timeMin = new Date(target)
+  timeMin.setDate(timeMin.getDate() - 45)
+  const timeMax = new Date(target)
+  timeMax.setDate(timeMax.getDate() + 45)
+
+  const params = new URLSearchParams({
+    timeMin: timeMin.toISOString(),
+    timeMax: timeMax.toISOString(),
+    showDeleted: 'true',
+    maxResults: '250',
+  })
+
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${recurringEventId}/instances?${params.toString()}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  )
+
+  if (!res.ok) return null
+  const data = await res.json()
+  const items = (data.items ?? []) as Array<{ id: string; originalStartTime?: { date?: string; dateTime?: string } }>
+
+  const match = items.find((item) => {
+    const orig = item.originalStartTime?.date ?? item.originalStartTime?.dateTime?.slice(0, 10)
+    return orig === originalDate
+  })
+
+  return match?.id ?? null
+}
+
+export async function cancelGoogleEventInstance(
+  userId: string,
+  recurringEventId: string,
+  originalDate: string
+): Promise<boolean> {
+  const accessToken = await getValidAccessToken(userId)
+  if (!accessToken) return false
+
+  const instanceId = await findGoogleEventInstance(userId, recurringEventId, originalDate)
+  if (!instanceId) return false
+
+  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${instanceId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'cancelled' }),
+  })
+
+  return res.ok
+}
+
+export async function rescheduleGoogleEventInstance(
+  userId: string,
+  recurringEventId: string,
+  originalDate: string,
+  newDate: string,
+  newStartTime: string,
+  newEndTime: string
+): Promise<boolean> {
+  const accessToken = await getValidAccessToken(userId)
+  if (!accessToken) return false
+
+  const instanceId = await findGoogleEventInstance(userId, recurringEventId, originalDate)
+  if (!instanceId) return false
+
+  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${instanceId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      status: 'confirmed',
+      start: { dateTime: `${newDate}T${newStartTime}:00+08:00` },
+      end: { dateTime: `${newDate}T${newEndTime}:00+08:00` },
+    }),
+  })
+
+  return res.ok
+}
+
+// Percobaan terbaik buat "batalin pembatalan" / kembaliin dari pindah —
+// ini area yang paling nggak pasti dari seluruh Google Calendar API yang
+// kita pakai, belum pernah dites langsung. Kalau nggak jalan mulus, kabari
+// biar dicari pendekatan lain.
+export async function restoreGoogleEventInstance(
+  userId: string,
+  recurringEventId: string,
+  originalDate: string,
+  originalStartTime: string,
+  originalEndTime: string
+): Promise<boolean> {
+  const accessToken = await getValidAccessToken(userId)
+  if (!accessToken) return false
+
+  const instanceId = await findGoogleEventInstance(userId, recurringEventId, originalDate)
+  if (!instanceId) return false
+
+  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${instanceId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      status: 'confirmed',
+      start: { dateTime: `${originalDate}T${originalStartTime}:00+08:00` },
+      end: { dateTime: `${originalDate}T${originalEndTime}:00+08:00` },
+    }),
+  })
+
+  return res.ok
+}

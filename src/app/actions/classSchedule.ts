@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/utils/supabase/server'
+import { hasGoogleConnection, pushClassScheduleToGoogle, updateClassScheduleInGoogle, deleteClassScheduleFromGoogle, cancelGoogleEventInstance, rescheduleGoogleEventInstance, restoreGoogleEventInstance } from '@/lib/googleCalendar'
 
 function revalidateAll() {
   revalidatePath('/')
@@ -9,15 +10,7 @@ function revalidateAll() {
   revalidatePath('/tasks')
 }
 
-export async function createClassScheduleRule({
-  title,
-  category,
-  dayOfWeek,
-  startTime,
-  endTime,
-  semesterStart,
-  semesterEnd,
-}: {
+type ScheduleInput = {
   title: string
   category: string | null
   dayOfWeek: number
@@ -25,7 +18,9 @@ export async function createClassScheduleRule({
   endTime: string
   semesterStart: string
   semesterEnd: string
-}) {
+}
+
+export async function createClassScheduleRule(input: ScheduleInput) {
   const supabase = await createClient()
 
   const {
@@ -36,49 +31,41 @@ export async function createClassScheduleRule({
     return { error: 'Belum login' }
   }
 
-  if (semesterStart > semesterEnd) {
+  if (input.semesterStart > input.semesterEnd) {
     return { error: 'Tanggal mulai semester harus sebelum tanggal akhir' }
   }
 
-  const { error } = await supabase.from('class_schedules').insert({
-    user_id: user.id,
-    title,
-    category,
-    day_of_week: dayOfWeek,
-    start_time: startTime,
-    end_time: endTime,
-    semester_start: semesterStart,
-    semester_end: semesterEnd,
-  })
+  const { data: inserted, error } = await supabase
+    .from('class_schedules')
+    .insert({
+      user_id: user.id,
+      title: input.title,
+      category: input.category,
+      day_of_week: input.dayOfWeek,
+      start_time: input.startTime,
+      end_time: input.endTime,
+      semester_start: input.semesterStart,
+      semester_end: input.semesterEnd,
+    })
+    .select('id')
+    .single()
 
   if (error) {
     return { error: error.message }
+  }
+
+  if (await hasGoogleConnection(user.id)) {
+    const eventId = await pushClassScheduleToGoogle(user.id, input)
+    if (eventId) {
+      await supabase.from('class_schedules').update({ google_event_id: eventId }).eq('id', inserted.id)
+    }
   }
 
   revalidateAll()
   return { error: null }
 }
 
-export async function updateClassScheduleRule(
-  id: string,
-  {
-    title,
-    category,
-    dayOfWeek,
-    startTime,
-    endTime,
-    semesterStart,
-    semesterEnd,
-  }: {
-    title: string
-    category: string | null
-    dayOfWeek: number
-    startTime: string
-    endTime: string
-    semesterStart: string
-    semesterEnd: string
-  }
-) {
+export async function updateClassScheduleRule(id: string, input: ScheduleInput) {
   const supabase = await createClient()
 
   const {
@@ -89,22 +76,38 @@ export async function updateClassScheduleRule(
     return { error: 'Belum login' }
   }
 
+  const { data: existing } = await supabase
+    .from('class_schedules')
+    .select('google_event_id')
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .single()
+
   const { error } = await supabase
     .from('class_schedules')
     .update({
-      title,
-      category,
-      day_of_week: dayOfWeek,
-      start_time: startTime,
-      end_time: endTime,
-      semester_start: semesterStart,
-      semester_end: semesterEnd,
+      title: input.title,
+      category: input.category,
+      day_of_week: input.dayOfWeek,
+      start_time: input.startTime,
+      end_time: input.endTime,
+      semester_start: input.semesterStart,
+      semester_end: input.semesterEnd,
     })
     .eq('id', id)
     .eq('user_id', user.id)
 
   if (error) {
     return { error: error.message }
+  }
+
+  if (existing?.google_event_id) {
+    await updateClassScheduleInGoogle(user.id, existing.google_event_id, input)
+  } else if (await hasGoogleConnection(user.id)) {
+    const eventId = await pushClassScheduleToGoogle(user.id, input)
+    if (eventId) {
+      await supabase.from('class_schedules').update({ google_event_id: eventId }).eq('id', id)
+    }
   }
 
   revalidateAll()
@@ -122,11 +125,22 @@ export async function deleteClassScheduleRule(id: string) {
     return { error: 'Belum login' }
   }
 
+  const { data: existing } = await supabase
+    .from('class_schedules')
+    .select('google_event_id')
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .single()
+
   // class_schedule_exceptions ikut kehapus otomatis lewat "on delete cascade".
   const { error } = await supabase.from('class_schedules').delete().eq('id', id).eq('user_id', user.id)
 
   if (error) {
     return { error: error.message }
+  }
+
+  if (existing?.google_event_id) {
+    await deleteClassScheduleFromGoogle(user.id, existing.google_event_id)
   }
 
   revalidateAll()
@@ -158,6 +172,13 @@ export async function setClassScheduleException({
     return { error: 'Belum login' }
   }
 
+  const { data: schedule } = await supabase
+    .from('class_schedules')
+    .select('google_event_id')
+    .eq('id', scheduleId)
+    .eq('user_id', user.id)
+    .single()
+
   const { error } = await supabase.from('class_schedule_exceptions').upsert(
     {
       schedule_id: scheduleId,
@@ -175,6 +196,23 @@ export async function setClassScheduleException({
     return { error: error.message }
   }
 
+  // Sync ke Google — best effort, nggak nge-block kalau gagal (area ini
+  // masih belum pernah dites langsung, lihat catatan di googleCalendar.ts).
+  if (schedule?.google_event_id) {
+    if (isCancelled) {
+      await cancelGoogleEventInstance(user.id, schedule.google_event_id, originalDate)
+    } else if (overrideDate && overrideStartTime && overrideEndTime) {
+      await rescheduleGoogleEventInstance(
+        user.id,
+        schedule.google_event_id,
+        originalDate,
+        overrideDate,
+        overrideStartTime,
+        overrideEndTime
+      )
+    }
+  }
+
   revalidateAll()
   return { error: null }
 }
@@ -190,6 +228,13 @@ export async function removeClassScheduleException(scheduleId: string, originalD
     return { error: 'Belum login' }
   }
 
+  const { data: schedule } = await supabase
+    .from('class_schedules')
+    .select('google_event_id, start_time, end_time')
+    .eq('id', scheduleId)
+    .eq('user_id', user.id)
+    .single()
+
   const { error } = await supabase
     .from('class_schedule_exceptions')
     .delete()
@@ -199,6 +244,16 @@ export async function removeClassScheduleException(scheduleId: string, originalD
 
   if (error) {
     return { error: error.message }
+  }
+
+  if (schedule?.google_event_id) {
+    await restoreGoogleEventInstance(
+      user.id,
+      schedule.google_event_id,
+      originalDate,
+      schedule.start_time,
+      schedule.end_time
+    )
   }
 
   revalidateAll()

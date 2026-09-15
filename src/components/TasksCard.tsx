@@ -435,7 +435,11 @@ export function TasksCard({ tasks, categories }: { tasks: Task[]; categories: Ta
                   </span>
                 )}
 
-                {dueLabel && <span className="shrink-0 text-xs text-[var(--dk-text-faint)]">{dueLabel}</span>}
+                {dueLabel && (
+                  <span suppressHydrationWarning className="shrink-0 text-xs text-[var(--dk-text-faint)]">
+                    {dueLabel}
+                  </span>
+                )}
 
                 <button
                   onClick={() => handleDelete(task)}
