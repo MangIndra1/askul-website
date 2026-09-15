@@ -481,8 +481,8 @@ export function CalendarPageClient({
   }
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 gap-5 lg:grid-cols-[1.6fr_1fr]">
-      <div className="glass flex h-full min-h-0 flex-col overflow-y-auto rounded-[28px] p-6">
+    <div className="flex flex-col gap-5 lg:grid lg:h-full lg:min-h-0 lg:grid-cols-[1.6fr_1fr]">
+      <div className="glass flex flex-col rounded-[28px] p-6 lg:h-full lg:min-h-0 lg:overflow-y-auto">
         <div className="flex items-center justify-between">
           <p className="text-[18px] font-bold tracking-[-0.3px] text-[var(--dk-text)]">Calendar</p>
           <button

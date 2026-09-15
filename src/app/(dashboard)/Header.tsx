@@ -25,8 +25,6 @@ export function Header({ displayName }: { displayName: string }) {
   }, [])
 
   if (!now) {
-    // Render kosong dulu di server (hindari mismatch waktu server vs client),
-    // baru terisi begitu component mount di browser.
     return <div className="mb-2 h-[64px] sm:h-[76px]" />
   }
 
@@ -35,9 +33,11 @@ export function Header({ displayName }: { displayName: string }) {
   const dateStr = `${DAYS[now.getDay()]}, ${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`
 
   return (
-    <div className="mb-2 flex flex-wrap items-start justify-between gap-4">
+    // flex-col di layar sempit (dua blok numpuk rapi, sama-sama rata kiri),
+    // baru jadi flex-row (rata kiri vs rata kanan) mulai breakpoint sm.
+    <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
       <div>
-        <h1 className="text-2xl font-bold text-[var(--dk-text)] sm:text-3xl">
+        <h1 className="text-xl font-bold text-[var(--dk-text)] sm:text-2xl lg:text-3xl">
           {getGreeting(now.getHours())},{' '}
           <span className="bg-gradient-to-br from-[var(--lav-400)] to-[var(--pink-400)] bg-clip-text text-transparent">
             {displayName}
@@ -47,8 +47,8 @@ export function Header({ displayName }: { displayName: string }) {
         <p className="mt-1 text-sm text-[var(--dk-text-soft)]">Fokus · Belajar · Berkembang</p>
       </div>
 
-      <div className="text-right">
-        <p className="text-3xl font-bold text-[var(--dk-text)] sm:text-4xl">
+      <div className="text-left sm:text-right">
+        <p className="text-2xl font-bold text-[var(--dk-text)] sm:text-3xl lg:text-4xl">
           {hh}:{mm}
         </p>
         <p className="text-xs text-[var(--dk-text-soft)]">{dateStr}</p>

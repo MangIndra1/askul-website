@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -17,7 +18,7 @@ const NAV_ITEMS = [
   { label: 'Focus', href: '/focus', icon: IconTarget },
   { label: 'Journal', href: '/journal', icon: IconBook },
   { label: 'Calendar', href: '/calendar', icon: IconCalendar },
-  { label: 'Stats', href: '/stats', icon: IconChart },
+  { label: 'My Profiles', href: '/stats', icon: IconChart },
 ]
 
 function IconHome({ className }: { className?: string }) {
@@ -78,15 +79,30 @@ function IconLogout({ className }: { className?: string }) {
     </svg>
   )
 }
+function IconMenu({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  )
+}
+function IconX({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  )
+}
 
 export function Sidebar({ profile }: { profile: Profile }) {
   const pathname = usePathname()
+  const [open, setOpen] = useState(false)
 
-  return (
-    <aside className="glass flex w-full flex-col gap-6 rounded-[28px] p-5 lg:w-[230px] lg:shrink-0">
+  const navContent = (
+    <>
       <div className="flex items-center gap-2.5 px-1 pt-1">
         <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-xl">
-          <Image src="/logo.png" alt="AsKul" fill className="object-cover" />
+          <Image src="/logo.png" alt="AsKul" fill className="object-cover" sizes="36px" />
         </div>
         <span className="text-lg font-semibold tracking-tight text-[var(--dk-text)]">AsKul</span>
       </div>
@@ -98,6 +114,7 @@ export function Sidebar({ profile }: { profile: Profile }) {
             <Link
               key={href}
               href={href}
+              onClick={() => setOpen(false)}
               className={`flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm font-medium transition-all ${
                 active
                   ? 'bg-gradient-to-br from-[var(--lav-400)]/20 to-[var(--pink-400)]/15 text-[var(--dk-text)] ring-1 ring-white/[0.08]'
@@ -134,6 +151,46 @@ export function Sidebar({ profile }: { profile: Profile }) {
           </button>
         </form>
       </div>
-    </aside>
+    </>
+  )
+
+  return (
+    <>
+      {/* Top bar — cuma muncul di bawah breakpoint lg */}
+      <div className="glass flex items-center justify-between rounded-[24px] p-4 lg:hidden">
+        <button
+          onClick={() => setOpen(true)}
+          aria-label="Buka menu"
+          className="flex h-9 w-9 items-center justify-center rounded-xl text-[var(--dk-text-soft)] transition hover:bg-white/[0.06]"
+        >
+          <IconMenu className="h-5 w-5" />
+        </button>
+        <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-lg">
+          <Image src="/logo.png" alt="AsKul" fill className="object-cover" sizes="32px" />
+        </div>
+      </div>
+
+      {/* Sidebar tetap — cuma keliatan di lg ke atas, perilaku sama kayak sebelumnya */}
+      <aside className="glass hidden w-[230px] shrink-0 flex-col gap-6 rounded-[28px] p-5 lg:flex">
+        {navContent}
+      </aside>
+
+      {/* Drawer geser dari kiri — buat layar di bawah lg */}
+      {open && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setOpen(false)} />
+          <aside className="glass absolute left-0 top-0 flex h-full w-[260px] max-w-[80vw] flex-col gap-6 rounded-r-[28px] p-5">
+            <button
+              onClick={() => setOpen(false)}
+              aria-label="Tutup menu"
+              className="absolute right-4 top-4 text-[var(--dk-text-faint)] transition hover:text-[var(--dk-text)]"
+            >
+              <IconX className="h-5 w-5" />
+            </button>
+            {navContent}
+          </aside>
+        </div>
+      )}
+    </>
   )
 }
