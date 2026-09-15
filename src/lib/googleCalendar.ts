@@ -50,7 +50,10 @@ async function getValidAccessToken(userId: string): Promise<string | null> {
     .eq('user_id', userId)
     .maybeSingle()
 
-  if (!connection) return null
+  if (!connection) {
+    console.error('[getValidAccessToken] User belum connect Google Calendar sama sekali.')
+    return null
+  }
 
   const expiresAt = new Date(connection.token_expires_at).getTime()
   const bufferMs = 5 * 60 * 1000 // refresh 5 menit sebelum bener-bener expired
@@ -70,7 +73,11 @@ async function getValidAccessToken(userId: string): Promise<string | null> {
     }),
   })
 
-  if (!tokenRes.ok) return null
+  if (!tokenRes.ok) {
+    const errText = await tokenRes.text().catch(() => '(gagal baca response)')
+    console.error('[getValidAccessToken] Refresh token gagal, status', tokenRes.status, '-', errText)
+    return null
+  }
 
   const tokenData = await tokenRes.json()
   const newExpiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
@@ -280,7 +287,10 @@ function firstOccurrenceDate(semesterStart: string, dayOfWeek: number): string {
 // RRULE) — bukan banyak event terpisah.
 export async function pushClassScheduleToGoogle(userId: string, schedule: ClassScheduleForSync): Promise<string | null> {
   const accessToken = await getValidAccessToken(userId)
-  if (!accessToken) return null
+  if (!accessToken) {
+    console.error('[pushClassScheduleToGoogle] Nggak ada access token valid — cek koneksi Google user.')
+    return null
+  }
 
   const firstDate = firstOccurrenceDate(schedule.semesterStart, schedule.dayOfWeek)
   const summary = schedule.category ? `[${schedule.category}] ${schedule.title}` : schedule.title
@@ -299,7 +309,11 @@ export async function pushClassScheduleToGoogle(userId: string, schedule: ClassS
     body: JSON.stringify(body),
   })
 
-  if (!res.ok) return null
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '(gagal baca response)')
+    console.error('[pushClassScheduleToGoogle] Google API nolak, status', res.status, '-', errText)
+    return null
+  }
   const data = await res.json()
   return data.id ?? null
 }

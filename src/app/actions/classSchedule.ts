@@ -2,7 +2,15 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/utils/supabase/server'
-import { hasGoogleConnection, pushClassScheduleToGoogle, updateClassScheduleInGoogle, deleteClassScheduleFromGoogle, cancelGoogleEventInstance, rescheduleGoogleEventInstance, restoreGoogleEventInstance } from '@/lib/googleCalendar'
+import {
+  hasGoogleConnection,
+  pushClassScheduleToGoogle,
+  updateClassScheduleInGoogle,
+  deleteClassScheduleFromGoogle,
+  cancelGoogleEventInstance,
+  rescheduleGoogleEventInstance,
+  restoreGoogleEventInstance,
+} from '@/lib/googleCalendar'
 
 function revalidateAll() {
   revalidatePath('/')
@@ -54,10 +62,18 @@ export async function createClassScheduleRule(input: ScheduleInput) {
     return { error: error.message }
   }
 
-  if (await hasGoogleConnection(user.id)) {
+  const connected = await hasGoogleConnection(user.id)
+  console.log('[createClassScheduleRule] Google connected?', connected)
+
+  if (connected) {
     const eventId = await pushClassScheduleToGoogle(user.id, input)
+    console.log('[createClassScheduleRule] eventId hasil push:', eventId)
     if (eventId) {
-      await supabase.from('class_schedules').update({ google_event_id: eventId }).eq('id', inserted.id)
+      const { error: linkError } = await supabase
+        .from('class_schedules')
+        .update({ google_event_id: eventId })
+        .eq('id', inserted.id)
+      if (linkError) console.error('[createClassScheduleRule] Gagal simpan google_event_id:', linkError.message)
     }
   }
 
