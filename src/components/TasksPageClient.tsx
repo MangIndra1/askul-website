@@ -467,57 +467,64 @@ export function TasksPageClient({
             <p className="py-6 text-center text-sm text-[var(--dk-text-faint)]">Belum ada task.</p>
           ) : (
             tasks.map((task) => (
-              <div key={task.id} className="group flex items-center gap-3 border-b border-white/[0.05] py-3 last:border-none">
-                <button
-                  onClick={() => handleToggle(task)}
-                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition ${
-                    task.completed ? 'border-transparent bg-[var(--lav-600)]' : 'border-[var(--dk-text-faint)]'
-                  }`}
-                >
-                  {task.completed && <IconCheck className="h-3.5 w-3.5 text-white" />}
-                </button>
-
-                <span
-                  onClick={() => startEditTask(task)}
-                  className={`min-w-0 flex-1 cursor-pointer text-sm ${
-                    task.completed ? 'text-[var(--dk-text-soft)]' : 'text-[var(--dk-text)]'
-                  }`}
-                >
-                  {task.title}
-                </span>
-
-                {task.recurrence_freq && (
-                  <span className="shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium text-[var(--dk-text-soft)]">
-                    {describeRecurrence({
-                      freq: task.recurrence_freq as RecurrenceFreq,
-                      interval: task.recurrence_interval,
-                      daysOfWeek: task.recurrence_days_of_week,
-                      until: task.recurrence_until,
-                    })}
-                  </span>
-                )}
-
-                {task.category && (
-                  <span
-                    className="shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium"
-                    style={{ color: categoryColor(categories, task.category) }}
+              <div
+                key={task.id}
+                className="group flex flex-col gap-2 border-b border-white/[0.05] py-3 last:border-none sm:flex-row sm:items-center sm:gap-3"
+              >
+                <div className="flex items-center gap-3 sm:contents">
+                  <button
+                    onClick={() => handleToggle(task)}
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition ${
+                      task.completed ? 'border-transparent bg-[var(--lav-600)]' : 'border-[var(--dk-text-faint)]'
+                    }`}
                   >
-                    {task.category}
-                  </span>
-                )}
+                    {task.completed && <IconCheck className="h-3.5 w-3.5 text-white" />}
+                  </button>
 
-                <button
-                  onClick={() => startEditTask(task)}
-                  className="shrink-0 text-[var(--dk-text-faint)] opacity-0 transition hover:text-[var(--dk-text)] group-hover:opacity-100"
-                >
-                  <IconPencil className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => handleDeleteTask(task)}
-                  className="shrink-0 text-[var(--dk-text-faint)] opacity-0 transition hover:text-red-400 group-hover:opacity-100"
-                >
-                  <IconTrash className="h-4 w-4" />
-                </button>
+                  <span
+                    onClick={() => startEditTask(task)}
+                    className={`min-w-0 flex-1 cursor-pointer text-sm ${
+                      task.completed ? 'text-[var(--dk-text-soft)]' : 'text-[var(--dk-text)]'
+                    }`}
+                  >
+                    {task.title}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pl-9 sm:contents sm:pl-0">
+                  {task.recurrence_freq && (
+                    <span className="shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium text-[var(--dk-text-soft)]">
+                      {describeRecurrence({
+                        freq: task.recurrence_freq as RecurrenceFreq,
+                        interval: task.recurrence_interval,
+                        daysOfWeek: task.recurrence_days_of_week,
+                        until: task.recurrence_until,
+                      })}
+                    </span>
+                  )}
+
+                  {task.category && (
+                    <span
+                      className="shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium"
+                      style={{ color: categoryColor(categories, task.category) }}
+                    >
+                      {task.category}
+                    </span>
+                  )}
+
+                  <button
+                    onClick={() => startEditTask(task)}
+                    className="shrink-0 text-[var(--dk-text-faint)] opacity-60 transition hover:text-[var(--dk-text)] sm:opacity-0 sm:group-hover:opacity-100"
+                  >
+                    <IconPencil className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteTask(task)}
+                    className="shrink-0 text-[var(--dk-text-faint)] opacity-60 transition hover:text-red-400 sm:opacity-0 sm:group-hover:opacity-100"
+                  >
+                    <IconTrash className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             ))
           )}

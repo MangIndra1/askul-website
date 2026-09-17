@@ -33,9 +33,10 @@ export function Header({ displayName }: { displayName: string }) {
   const dateStr = `${DAYS[now.getDay()]}, ${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`
 
   return (
-    // flex-col di layar sempit (dua blok numpuk rapi, sama-sama rata kiri),
-    // baru jadi flex-row (rata kiri vs rata kanan) mulai breakpoint sm.
-    <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+    // Di bawah lg: cukup sapaan aja yang muncul (HP/tablet udah punya jam
+    // sendiri di status bar, nggak perlu dobel). Jam+tanggal baru muncul
+    // mulai breakpoint lg, sejajar di kanan.
+    <div className="mb-2 flex items-start justify-between gap-4">
       <div>
         <h1 className="text-xl font-bold text-[var(--dk-text)] sm:text-2xl lg:text-3xl">
           {getGreeting(now.getHours())},{' '}
@@ -47,8 +48,8 @@ export function Header({ displayName }: { displayName: string }) {
         <p className="mt-1 text-sm text-[var(--dk-text-soft)]">Fokus · Belajar · Berkembang</p>
       </div>
 
-      <div className="text-left sm:text-right">
-        <p className="text-2xl font-bold text-[var(--dk-text)] sm:text-3xl lg:text-4xl">
+      <div className="hidden text-right lg:block">
+        <p className="text-3xl font-bold text-[var(--dk-text)] lg:text-4xl">
           {hh}:{mm}
         </p>
         <p className="text-xs text-[var(--dk-text-soft)]">{dateStr}</p>
